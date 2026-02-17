@@ -1,5 +1,4 @@
 import platform
-from mac_clipboard import MacClipboard
 
 supported_platform = ('Darwin',)
 
@@ -11,5 +10,9 @@ def get_clipboard():
         raise Exception('Unsupported platform')
 
     if ptfrm == 'Darwin':
+        from mac_clipboard import MacClipboard
         return MacClipboard()
+    elif ptfrm == 'Windows':
+        from windows_clipboard import WindowsClipboard
+        return WindowsClipboard()
     return None
