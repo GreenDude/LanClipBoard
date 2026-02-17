@@ -24,9 +24,9 @@ class MacClipboard(AbstractClipboard):
         for t in TEXT_TYPES:
             s = pb.stringForType_(t)
             if s:
-                return ("text", str(s))
+                return "text", str(s)
 
-        return ("empty", None)
+        return "empty", None
 
 
     def paste_clipboard_entry(self):
