@@ -15,4 +15,7 @@ def get_clipboard():
     elif ptfrm == 'Windows':
         from windows_clipboard import WindowsClipboard
         return WindowsClipboard()
+    elif ptfrm == 'Linux':
+        from linux_clipboard import LinuxClipboard
+        return LinuxClipboard()
     return None
