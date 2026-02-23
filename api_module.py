@@ -1,13 +1,5 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-
-
-class ClipboardEntry(BaseModel):
-    platform: str
-    type: str
-    entry: str
-    timestamp: str
-
+from clipboard_storage import ClipboardEntry
 app = FastAPI()
 
 
