@@ -49,65 +49,26 @@ class ClipboardStorage:
 
         return False
 
-def test1():
-    first_test_entry = ClipboardEntry(
-        platform="Windows",
-        type="text",
-        entry="text",
-        timestamp=datetime.now(UTC),
-    )
+    def get_all_clipboard_entries(self):
+        res = list()
+        for entry in self.storage_dict:
+            value = self.storage_dict[entry][len(self.storage_dict[entry]) - 1]
+            res.append((entry, value))
 
-    json_entry = first_test_entry.model_dump_json()
-    print(f"Clipboard entry: {json_entry}")
+        if len(res) > 0:
+            print(f"Pulling Clipboard entries: {res}")
+            return res
+        else:
+            return None
 
-    cs = ClipboardStorage()
-    print(cs.store_clipboard_entry("IP1", first_test_entry))
-    print (cs.storage_dict.values())
+    def get_latest_clipboard_entry(self) -> ClipboardEntry | None:
+        timestamps = []
+        for entry in self.storage_dict:
+            clip_entry = self.storage_dict[entry][len(self.storage_dict[entry]) - 1]
+            timestamps.append((entry, clip_entry.timestamp))
 
-def test2():
-    first_test_entry = ClipboardEntry(
-        platform="Windows",
-        type="text",
-        entry="text1",
-        timestamp=datetime.now(UTC),
-    )
-    from time import sleep
-    sleep(2)
-    second_test_entry = ClipboardEntry(
-        platform="Windows",
-        type="text",
-        entry="text2",
-        timestamp=datetime.now(UTC),
-    )
-
-    cs = ClipboardStorage()
-    print(cs.store_clipboard_entry("IP1", first_test_entry))
-    print(cs.store_clipboard_entry("IP1", second_test_entry))
-    to_print = cs.storage_dict.get("IP1")
-    for value in to_print:
-        json_value = value.model_dump_json()
-        print(f"Test 2 Clipboard entry: {json_value}")
-
-def test3():
-    first_test_entry = ClipboardEntry(
-        platform="Windows",
-        type="test",
-        entry="text",
-        timestamp=datetime.now(UTC),
-    )
-
-    json_entry = first_test_entry.model_dump_json()
-    print(f"Clipboard entry: {json_entry}")
-
-    cs = ClipboardStorage()
-    print(cs.store_clipboard_entry("IP1", first_test_entry))
-    print(cs.storage_dict.values())
-
-
-if __name__ == "__main__":
-    test1()
-    print("><#><" * 20)
-    test2()
-    print("><#><" * 20)
-    test3()
-    print("><#><" * 20)
+        if len(timestamps) > 0:
+            latest_entry = max(timestamps, key=lambda e: e[1])[0]
+            return self.storage_dict[latest_entry][len(self.storage_dict[latest_entry]) - 1]
+        else:
+            return None
