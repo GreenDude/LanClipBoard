@@ -9,11 +9,9 @@ class WindowsClipboard(AbstractClipboard):
 
 
     def open_clipboard_safely(self, number_of_retries = 5, delay = 0.1):
-        print("open_clipboard_safely")
         for _ in range(number_of_retries):
             try:
                 win32clipboard.OpenClipboard()
-                print("the clipboard is opened")
                 return True
             except:
                 time.sleep(delay)
