@@ -17,6 +17,15 @@ def get_linux_clipboard():
 
 class WaylandClipboard(AbstractClipboard):
 
+    def __init__(self):
+        self._paste_default_clipboard_entry()
+
+    def _paste_default_clipboard_entry(self):
+        process = subprocess.Popen(['wl-copy', '--type', 'text/plain'], stdin=subprocess.PIPE, text=True)
+        process.stdin.write('')
+        process.stdin.close()
+
+
     def _check_clipboard_type(self):
         list_of_types = []
         try:
