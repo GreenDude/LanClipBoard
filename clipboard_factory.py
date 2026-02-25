@@ -1,6 +1,6 @@
 import platform
 
-supported_platform = ('Darwin',)
+supported_platform = ('Darwin', 'Windows', 'Linux')
 
 def get_clipboard():
     ptfrm = platform.system()
