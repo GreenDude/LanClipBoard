@@ -1,8 +1,16 @@
 import platform
+import sys
 import time
+import traceback
 from datetime import datetime, UTC
+
+from api_module import broadcast_to_peers
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 from abstract_clipboard import AbstractClipboard  # your ABC
+
+PEER_LIST = [
+    "localhost",
+]
 
 def monitor_clipboard(
     clipboard: AbstractClipboard,
@@ -35,8 +43,11 @@ def monitor_clipboard(
                     )
                     # store under a dedicated key for "local machine"
                     storage.store_clipboard_entry(local_id, entry)
+                    broadcast_to_peers(entry, PEER_LIST)
 
         except Exception:
+            print(f"Well that was unexpected {last_fingerprint}")
+            print(traceback.format_exc())
             # Keep the thread alive; optionally log
             pass
 

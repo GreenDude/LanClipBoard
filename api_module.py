@@ -1,3 +1,4 @@
+import httpx
 from fastapi import Request, APIRouter
 from fastapi.params import Depends
 
@@ -35,3 +36,16 @@ def build_rest_router():
         return cs.get_latest_clipboard_entry() if cs.get_latest_clipboard_entry() else None
 
     return rest_router
+
+
+def broadcast_to_peers(entry: ClipboardEntry, peers: list[str], port: int = 8000) -> None:
+    payload = entry.model_dump(mode="json")  # datetime -> ISO string
+
+    with httpx.Client(timeout=2) as client:
+        for ip in peers:
+            url = f"http://{ip}:{port}/api/clipboard_entry"
+            try:
+                r = client.post(url, json=payload)
+                r.raise_for_status()
+            except Exception as e:
+                print(f"[broadcast] failed to send to {ip}: {e}")

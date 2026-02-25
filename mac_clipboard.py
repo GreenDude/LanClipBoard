@@ -18,7 +18,7 @@ class MacClipboard(AbstractClipboard):
         if urls:
             paths = [u.path() for u in urls if getattr(u, "isFileURL", lambda: False)()]
             if paths:
-                return ("files", paths)
+                return "files", str(paths)
 
         # then text
         for t in TEXT_TYPES:
