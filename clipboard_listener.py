@@ -9,7 +9,7 @@ from clipboard_storage import ClipboardEntry, ClipboardStorage
 from abstract_clipboard import AbstractClipboard  # your ABC
 
 PEER_LIST = [
-    "localhost",
+    "localhost",  # Localhost is for testing purposes only
 ]
 
 def monitor_clipboard(
@@ -36,6 +36,7 @@ def monitor_clipboard(
                     last_fingerprint = fingerprint
 
                     entry = ClipboardEntry(
+                        origin=local_id,
                         platform=platform.system(),      # e.g. "Linux"/"Darwin"/"Windows"
                         type=clip_type,         # "text"/"files"
                         entry=clip_value,

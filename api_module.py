@@ -18,12 +18,16 @@ def build_rest_router():
             cs: ClipboardStorage = Depends(get_storage)
     ):
 
-        if cs.store_clipboard_entry(request.client.host, entry):
+        entry_origin = request.client.host
+        entry.origin = entry_origin
+
+        if cs.store_clipboard_entry(entry_origin, entry):
             return {"host": request.client.host, "platform": entry.platform, "entry": entry.entry,
                     "timestamp": entry.timestamp}
         else:
             return {
-                f"failed to process type: {entry.type}, entry: {entry.entry}, timestamp: {entry.timestamp}, platform: {entry.platform}"}
+                f"failed to process type: {entry.type}, entry: {entry.entry}, timestamp: {entry.timestamp}, platform: {entry.platform}"
+            }
 
     @rest_router.get("/clipboard_entries")
     async def get_clipboard_entries(cs: ClipboardStorage = Depends(get_storage)):

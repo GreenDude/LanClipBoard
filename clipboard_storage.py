@@ -5,6 +5,7 @@ _supported_formats = ("text", "files")
 _supported_platforms = ("Windows", "Darwin", "Linux")
 
 class ClipboardEntry(BaseModel):
+    origin: str
     platform: str
     type: str
     entry: str
