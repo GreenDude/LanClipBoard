@@ -35,5 +35,5 @@ class WindowsClipboard(AbstractClipboard):
 
 
 
-    def paste_clipboard_entry(self):
+    def paste_clipboard_entry(self, entry, entry_type):
         pass

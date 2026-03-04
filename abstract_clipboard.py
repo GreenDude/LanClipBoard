@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 
+from clipboard_storage import ClipboardEntry
+
+
 class AbstractClipboard(ABC):
 
     @abstractmethod
@@ -8,5 +11,5 @@ class AbstractClipboard(ABC):
 
 
     @abstractmethod
-    def paste_clipboard_entry(self):
+    def paste_clipboard_entry(self, entry, entry_type):
         pass
