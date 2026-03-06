@@ -33,14 +33,13 @@ class MacClipboard(AbstractClipboard):
         return "empty", None
 
 
-    def paste_clipboard_entry(self, enty, entry_type):
+    def paste_clipboard_entry(self, enty):
         pb = AppKit.NSPasteboard.generalPasteboard()
-        if entry_type == "text":
-            pb_updated = pb.writeObjects_([enty])
-            if pb_updated:
-                with self.keyboard_controller.pressed(keyboard.Key.cmd):
-                    self.keyboard_controller.press('v')
-                    self.keyboard_controller.release('v')
+        pb_updated = pb.writeObjects_([enty])
+        if pb_updated:
+            with self.keyboard_controller.pressed(keyboard.Key.cmd):
+                self.keyboard_controller.press('v')
+                self.keyboard_controller.release('v')
 
-            else:
-                print(f"Failed to paste {enty}")
+        else:
+            print(f"Failed to paste {enty}")

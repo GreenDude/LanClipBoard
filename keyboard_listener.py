@@ -1,36 +1,46 @@
+from __future__ import annotations
+
+from queue import Queue
+from threading import Event, Thread
 from pynput import keyboard
+import time
 
-PRESSED_KEYS = set()
+from clipboard_storage import ClipboardStorage
 
-def on_press(key):
-    # print(f'Alphanumeric key {key.char} pressed')
-    normalised_key = normalize_key(key)
-    print(f"Pressed {normalised_key}")
-    PRESSED_KEYS.add(normalised_key)
+PASTE_HOTKEY = {"Key.cmd", "Key.shift", "v"}  # Cmd+Shift+V. TODO: Read from config
 
-    my_paste_command = {"Key.cmd", "Key.shift", "v"}
-    if my_paste_command <= PRESSED_KEYS:
-        # Trigger paste
-        print("YAY")
-    else:
-        print(PRESSED_KEYS)
-
-
-
-def normalize_key(key):
+def normalize_key(key) -> str:
     if hasattr(key, "char") and key.char:
         return key.char.lower()
     return str(key)
 
+def monitor_keyboard(stop_event: Event, paste_queue: Queue, clipboard_storage: ClipboardStorage):
+    pressed = set()
 
-def on_release(key):
-    normalised_key = normalize_key(key)
-    print(f"Removed {normalised_key}")
-    PRESSED_KEYS.remove(normalised_key)
+    def on_press(key):
+        k = normalize_key(key)
+        pressed.add(k)
 
+        if PASTE_HOTKEY <= pressed:
+            print("YAY (paste hotkey)")
+            # TODO: trigger paste action here
+            paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
+            print(paste_queue.qsize())
+            print(paste_queue.get())
 
-# Collect events until released
-with keyboard.Listener(
-        on_press=on_press,
-        on_release=on_release) as listener:
+        # Optional debug:
+        # print("pressed:", pressed)
+
+    def on_release(key):
+        k = normalize_key(key)
+        pressed.discard(k)
+
+    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener.start()
+
+    # Wait until stop_event, then stop listener
+    while not stop_event.is_set():
+        time.sleep(0.1)
+
+    listener.stop()
     listener.join()

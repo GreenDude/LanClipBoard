@@ -11,5 +11,5 @@ class AbstractClipboard(ABC):
 
 
     @abstractmethod
-    def paste_clipboard_entry(self, entry, entry_type):
+    def paste_clipboard_entry(self, entry):
         pass
