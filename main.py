@@ -22,6 +22,7 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     # Queue recording items to paste from clipboard storage
     app.state.paste_queue = Queue()
+    app.state.is_pasting = False
 
     stop_event = Event()
     app.state.stop_event = stop_event
@@ -36,7 +37,7 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     keyboard_thread = Thread(
         target=monitor_keyboard,
-        args=(stop_event, app.state.paste_queue, app.state.clipboard_storage,),          # <-- NOTE the comma is required
+        args=(stop_event, app.state.paste_queue, app.state.clipboard_storage, app.state.is_pasting),          # <-- NOTE the comma is required
         daemon=True,
         name="keyboard_thread",
     )
