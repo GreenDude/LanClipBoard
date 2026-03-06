@@ -33,13 +33,28 @@ class MacClipboard(AbstractClipboard):
         return "empty", None
 
 
-    def paste_clipboard_entry(self, enty):
+    def paste_clipboard_entry(self, entry):
         pb = AppKit.NSPasteboard.generalPasteboard()
-        pb_updated = pb.writeObjects_([enty])
+
+        print(f"Attempting to paste {entry}, which is a {type(entry)}")
+
+        if isinstance(entry, str):
+            pb.clearContents()
+            pb_updated = pb.setString_forType_(entry, "public.utf8-plain-text")
+
+        elif isinstance(entry, list):
+            pb.clearContents()
+            urls = [NSURL.fileURLWithPath_(path) for path in entry]
+            pb_updated = pb.writeObjects_(urls)
+
+        else:
+            print(f"Unsupported entry type: {type(entry)}")
+            return
+
         if pb_updated:
+            print(f"Successfully updated {entry}")
             with self.keyboard_controller.pressed(keyboard.Key.cmd):
                 self.keyboard_controller.press('v')
                 self.keyboard_controller.release('v')
-
         else:
-            print(f"Failed to paste {enty}")
+            print(f"Failed to paste {entry}")

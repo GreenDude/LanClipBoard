@@ -8,6 +8,7 @@ from api_module import build_rest_router
 from clipboard_listener import monitor_clipboard
 from clipboard_storage import ClipboardStorage
 from keyboard_listener import monitor_keyboard
+from paste_queue_handler import paste_queue_handler
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         daemon=True,
         name="clipboard_thread",
     )
+
     keyboard_thread = Thread(
         target=monitor_keyboard,
         args=(stop_event, app.state.paste_queue, app.state.clipboard_storage,),          # <-- NOTE the comma is required
@@ -39,11 +41,20 @@ async def async_clipboard_lifespan(app: FastAPI):
         name="keyboard_thread",
     )
 
+    queue_handler_thread = Thread(
+        target=paste_queue_handler,
+        args=(stop_event, app.state.paste_queue, app.state.clipboard,),
+        daemon=True,
+        name="queue_handler_thread",
+    )
+
     clipboard_thread.start()
     keyboard_thread.start()
+    queue_handler_thread.start()
 
     app.state.clipboard_thread = clipboard_thread
     app.state.keyboard_thread = keyboard_thread
+    app.state.queue_handler_thread = queue_handler_thread
 
     # --- app runs here ---
     try:
@@ -54,6 +65,7 @@ async def async_clipboard_lifespan(app: FastAPI):
 
         keyboard_thread.join(timeout=2)
         clipboard_thread.join(timeout=2)
+        queue_handler_thread.join(timeout=2)
 
 
 app = FastAPI(lifespan=async_clipboard_lifespan)

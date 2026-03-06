@@ -26,7 +26,7 @@ def monitor_keyboard(stop_event: Event, paste_queue: Queue, clipboard_storage: C
             # TODO: trigger paste action here
             paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
             print(paste_queue.qsize())
-            print(paste_queue.get())
+            # print(paste_queue.get())
 
         # Optional debug:
         # print("pressed:", pressed)

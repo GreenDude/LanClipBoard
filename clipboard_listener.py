@@ -8,7 +8,10 @@ from clipboard_storage import ClipboardEntry, ClipboardStorage
 from abstract_clipboard import AbstractClipboard  # your ABC
 
 PEER_LIST = [
-    "localhost",  # Localhost is for testing purposes only
+    # "localhost",  # Localhost is for testing purposes only
+    "192.168.100.17",
+    # "192.168.100.54",
+
 ]
 
 def monitor_clipboard(
