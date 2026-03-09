@@ -27,7 +27,7 @@ class WindowsClipboard(AbstractClipboard):
                 if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
                     return "text", win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
                 elif win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_HDROP):
-                    return "files", list(win32clipboard.GetClipboardData(win32clipboard.CF_HDROP))
+                    return "files", str(list(win32clipboard.GetClipboardData(win32clipboard.CF_HDROP)))
             finally:
                 win32clipboard.CloseClipboard()
 

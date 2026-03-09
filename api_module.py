@@ -4,9 +4,11 @@ import aiofiles
 import httpx
 from fastapi import Request, APIRouter, responses
 from fastapi.params import Depends
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from starlette.responses import StreamingResponse
 from pathlib import Path
+
+from starlette.responses import StreamingResponse
 
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 
@@ -18,13 +20,15 @@ class FileRequest(BaseModel):
         self.path = path
         return self
 
+CHUNK_SIZE = 1024 * 1024  # 1 MB
+
+
 def get_storage(request: Request) -> ClipboardStorage:
     return request.app.state.clipboard_storage
 
 
 def build_rest_router():
     rest_router = APIRouter(prefix="/api", tags=["api"])
-    CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 
 
@@ -58,13 +62,22 @@ def build_rest_router():
 
     @rest_router.post("/file")
     async def get_file(file_request: FileRequest):
+        file_path = Path(file_request.path)
+
         async def iter_file():
-            async with aiofiles.open(file_request.path, 'rb') as f:
+            async with aiofiles.open(file_path, "rb") as f:
                 while chunk := await f.read(CHUNK_SIZE):
                     yield chunk
 
-        headers = {'Content-Disposition': 'attachment; filename="large_file.tar"'}
-        return StreamingResponse(iter_file(), headers=headers, media_type='application/x-tar')
+        headers = {
+            "Content-Disposition": f'attachment; filename="{file_path.name}"'
+        }
+
+        return StreamingResponse(
+            iter_file(),
+            headers=headers,
+            media_type="application/octet-stream"
+        )
 
     return rest_router
 
@@ -84,19 +97,26 @@ def broadcast_to_peers(entry: ClipboardEntry, peers: list[str], port: int = 8000
 
 def get_files(paths: List[str], ip: str, port: int = 8000):
 
-    with httpx.Client(timeout=2) as client:
-        url = f"http://{ip}:{port}/api/file"
+    timeout = httpx.Timeout(connect=5, read=60, write = 30, pool = 5)
+    url = f"http://{ip}:{port}/api/file"
+
+    with httpx.Client(timeout=timeout) as client:
         try :
             for str_path in paths:
                 file_path = Path(str_path)
                 file_name = file_path.name
                 json_body = FileRequest(path=str_path)
                 payload = json_body.model_dump(mode="json")
-                r = client.post(url, json = payload)
-                r.raise_for_status()
-                with open(file_name, "wb") as f:
-                    print(f"Saving {file_name}")
-                    f.write(r.content)
+
+                with client.stream("POST", url, json=payload) as r:
+
+                    r.raise_for_status()
+                    temp_file = file_name
+                    print(f"Saving {file_name} to temp_file")
+
+                    with open(file_name, "wb") as f:
+                        for chunk in r.iter_bytes(chunk_size=CHUNK_SIZE):
+                            f.write(chunk)
 
 
         except Exception as e:
