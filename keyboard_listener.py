@@ -14,7 +14,11 @@ def normalize_key(key) -> str:
         return key.char.lower()
     return str(key)
 
-def monitor_keyboard(stop_event: Event, paste_queue: Queue, clipboard_storage: ClipboardStorage, is_pasting: bool) -> None:
+def monitor_keyboard(stop_event: Event,
+                     paste_queue: Queue,
+                     clipboard_storage: ClipboardStorage,
+                     is_pasting: bool
+                     ) -> None:
     pressed = set()
 
     def on_press(key):
@@ -34,7 +38,7 @@ def monitor_keyboard(stop_event: Event, paste_queue: Queue, clipboard_storage: C
         nonlocal is_pasting
         k = normalize_key(key)
         pressed.discard(k)
-        if key in PASTE_HOTKEY:
+        if k in PASTE_HOTKEY:
             is_pasting = False
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)

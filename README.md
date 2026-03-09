@@ -13,11 +13,19 @@ TBC...
 
 ✅ File Transfer
 
+☑️ Windows paste
+
+☑️ Linux Wayland paste
+
+☑️ Linux X11 paste
+
 ☑️ Security
+
+☑️ Available devices discovery (via secure handshake?)
 
 **Known issues**
 
-☢️ Paste Queue is stuck after 1 file transfer
+☢️ ~~Paste Queue is stuck after 1 file transfer~~ FIXED
 
 ☢️ Windows paths are messed up
 
