@@ -115,8 +115,12 @@ def get_files(paths: List[str], ip: str, port: int = 8000):
                     print(f"Saving {file_name} to temp_file")
 
                     with open(file_name, "wb") as f:
+                        chunk_num = 0
                         for chunk in r.iter_bytes(chunk_size=CHUNK_SIZE):
+                            chunk_num += 1
+                            print(f"Saving chunk # {chunk_num}")
                             f.write(chunk)
+                        print(f"File {file_name} saved")
 
 
         except Exception as e:

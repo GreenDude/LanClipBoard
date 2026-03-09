@@ -4,3 +4,21 @@ Could you use a messaging app or something else? You could... but that would be 
 This is exactly the annoyance I ran into, which is why I created this project.
 
 TBC...
+
+**Feature Set**
+
+✅ Cross-platform clipboard
+
+✅ Sharing on LAN
+
+✅ File Transfer
+
+☑️ Security
+
+**Known issues**
+
+☢️ Paste Queue is stuck after 1 file transfer
+
+☢️ Windows paths are messed up
+
+☢️ Linux support pretty much is a mess
