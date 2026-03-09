@@ -1,5 +1,7 @@
+import ast
 from queue import Queue, Empty
 
+import api_module
 from abstract_clipboard import AbstractClipboard
 from clipboard_storage import ClipboardEntry
 
@@ -22,7 +24,8 @@ def paste_queue_handler(stop_event, paste_queue: Queue, clipboard_implementation
             elif queued_entry.type == "files":
                 print("If the entry type is files")
                 # API call / file fetch
-                pass
+                ip_str = queued_entry.origin if queued_entry.origin != "local" else "localhost"
+                api_module.get_files([p for p in ast.literal_eval(queued_entry.entry)], ip_str)
             else:
                 print("The entry type is not supported")
                 raise NotImplementedError(f"Unsupported clipboard entry type: {queued_entry.type}")
