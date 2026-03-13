@@ -13,9 +13,9 @@ PASTE_HOTKEY = {"Key.ctrl", "Key.shift", "v"}  # ctrl+Shift+V. TODO: Read from c
 
 def normalize_key(key) -> str:
     if hasattr(key, "char") and key.char:
+        if len(key.char) == 0 and 1<=ord(key.char)<=26:
+            return str(ord(key.char) + 96)
         return key.char.lower()
-    if len(key.char) == 0 and 1<=ord(key.char)<=26:
-        return str(ord(key.char) + 96)
     key_str = str(key)
     if "_" in key_str:
         key_str = key_str[:key_str.index("_")]

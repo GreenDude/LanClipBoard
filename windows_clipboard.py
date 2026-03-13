@@ -1,7 +1,9 @@
 import time
 import os
+from pathlib import Path
 
 import win32clipboard
+import win32con
 from pynput import keyboard
 
 from abstract_clipboard import AbstractClipboard
@@ -33,7 +35,7 @@ class WindowsClipboard(AbstractClipboard):
                     return "text", win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
                 elif win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_HDROP):
                     path_list = list(win32clipboard.GetClipboardData(win32clipboard.CF_HDROP))
-                    normalized_list = [os.path.normpath(p) for p in path_list]
+                    normalized_list = [Path(p).as_posix() for p in path_list]
                     return "files", str(normalized_list)
             finally:
                 win32clipboard.CloseClipboard()
