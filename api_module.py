@@ -1,10 +1,10 @@
 from typing import List
+from urllib.parse import quote
 
 import aiofiles
 import httpx
 from fastapi import Request, APIRouter, responses
 from fastapi.params import Depends
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pathlib import Path
 
@@ -70,7 +70,7 @@ def build_rest_router():
                     yield chunk
 
         headers = {
-            "Content-Disposition": f'attachment; filename="{file_path.name}"'
+            "Content-Disposition": f'attachment; filename="{quote(file_path.name)}"'
         }
 
         return StreamingResponse(
