@@ -8,7 +8,7 @@ import time
 from clipboard_storage import ClipboardStorage
 
 # PASTE_HOTKEY = {"Key.cmd", "Key.shift", "v"}  # Cmd+Shift+V. TODO: Read from config
-PASTE_HOTKEY = {"Key.ctrl", "Key.shift", "v"}  # ctrl+Shift+V. TODO: Read from config
+PASTE_HOTKEY = {"Key.ctrl", "Key.alt", "v"}  # ctrl+Shift+V. TODO: Read from config
 
 
 def normalize_key(key) -> str:
@@ -17,6 +17,16 @@ def normalize_key(key) -> str:
             return chr(ord(key.char) + 96)
         return key.char.lower()
     key_str = str(key)
+
+    # Handle <86> style VK codes. Because Ctrl + Alt + V is <86>
+    if key_str.startswith("<") and key_str.endswith(">"):
+        try:
+            vk = int(key_str[1:-1])
+            if 65 <= vk <= 90:  # A-Z
+                return chr(vk).lower()
+        except ValueError:
+            pass
+
     if "_" in key_str:
         key_str = key_str[:key_str.index("_")]
     return key_str
