@@ -9,8 +9,8 @@ from abstract_clipboard import AbstractClipboard  # your ABC
 
 PEER_LIST = [
     # "localhost",  # Localhost is for testing purposes only
-    "192.168.100.17",
-    # "192.168.100.54",
+    "192.168.100.17", # Win
+    # "192.168.100.61", # Mac
 
 ]
 

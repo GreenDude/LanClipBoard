@@ -13,7 +13,9 @@ TBC...
 
 ✅ File Transfer
 
-☑️ Windows paste
+✅ Windows paste
+
+☑️ Read shortcut from config on startup
 
 ☑️ Linux Wayland paste
 
@@ -25,8 +27,8 @@ TBC...
 
 **Known issues**
 
-☢️ ~~Paste Queue is stuck after 1 file transfer~~ FIXED
+☢️ Files are saved in project root for now
 
-☢️ Windows paths are messed up
+☢️ Windows CTRL + Shift + V causes double paste
 
 ☢️ Linux support pretty much is a mess

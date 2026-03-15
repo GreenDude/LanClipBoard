@@ -7,8 +7,8 @@ import time
 
 from clipboard_storage import ClipboardStorage
 
-# PASTE_HOTKEY = {"Key.cmd", "Key.shift", "v"}  # Cmd+Shift+V. TODO: Read from config
-PASTE_HOTKEY = {"Key.ctrl", "Key.alt", "v"}  # ctrl+Shift+V. TODO: Read from config
+PASTE_HOTKEY = {"Key.cmd", "Key.shift", "v"}  # Cmd+Shift+V. TODO: Read from config
+# PASTE_HOTKEY = {"Key.ctrl", "Key.shift", "Key.insert"}  # ctrl+Shift+Insert. TODO: Read from config
 
 
 def normalize_key(key) -> str:
