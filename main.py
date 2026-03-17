@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from queue import Queue
 from threading import Event, Thread
 from fastapi import FastAPI
+import os
+import platform
 
 from clipboard_factory import get_clipboard
 from api_module import build_rest_router
@@ -35,13 +37,6 @@ async def async_clipboard_lifespan(app: FastAPI):
         name="clipboard_thread",
     )
 
-    keyboard_thread = Thread(
-        target=monitor_keyboard,
-        args=(stop_event, app.state.paste_queue, app.state.clipboard_storage, app.state.is_pasting),          # <-- NOTE the comma is required
-        daemon=True,
-        name="keyboard_thread",
-    )
-
     queue_handler_thread = Thread(
         target=paste_queue_handler,
         args=(stop_event, app.state.paste_queue, app.state.clipboard,),
@@ -50,12 +45,25 @@ async def async_clipboard_lifespan(app: FastAPI):
     )
 
     clipboard_thread.start()
-    keyboard_thread.start()
     queue_handler_thread.start()
 
     app.state.clipboard_thread = clipboard_thread
-    app.state.keyboard_thread = keyboard_thread
     app.state.queue_handler_thread = queue_handler_thread
+
+    keyboard_thread = None
+    is_wayland = platform.system() == "Linux" and (os.environ.get("XDG_SESSION_TYPE") == "wayland")
+
+    if not is_wayland:
+        keyboard_thread = Thread(
+            target=monitor_keyboard,
+            args=(stop_event, app.state.paste_queue, app.state.clipboard_storage, app.state.is_pasting),
+            daemon=True,
+            name="keyboard_thread",
+        )
+        keyboard_thread.start()
+        app.state.keyboard_thread = keyboard_thread
+    else:
+        print("Wayland detected: keyboard listener disabled")
 
     # --- app runs here ---
     try:
@@ -64,7 +72,9 @@ async def async_clipboard_lifespan(app: FastAPI):
         # --- shutdown ---
         stop_event.set()
 
-        keyboard_thread.join(timeout=2)
+        if keyboard_thread is not None:
+            keyboard_thread.join(timeout=2)
+
         clipboard_thread.join(timeout=2)
         queue_handler_thread.join(timeout=2)
 

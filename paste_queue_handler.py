@@ -21,11 +21,17 @@ def paste_queue_handler(stop_event, paste_queue: Queue, clipboard_implementation
             if queued_entry.type == "text":
                 print("If the entry type is text")
                 clipboard_implementation.paste_clipboard_entry(queued_entry.entry)
+
             elif queued_entry.type == "files":
                 print("If the entry type is files")
-                # API call / file fetch
                 ip_str = queued_entry.origin if queued_entry.origin != "local" else "localhost"
-                api_module.get_files([p for p in ast.literal_eval(queued_entry.entry)], ip_str)
+                downloaded_paths = api_module.get_files(
+                    [p for p in ast.literal_eval(queued_entry.entry)],
+                    ip_str
+                )
+                if downloaded_paths:
+                    clipboard_implementation.paste_clipboard_entry(downloaded_paths)
+
             else:
                 print("The entry type is not supported")
                 raise NotImplementedError(f"Unsupported clipboard entry type: {queued_entry.type}")

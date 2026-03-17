@@ -96,12 +96,18 @@ def broadcast_to_peers(entry: ClipboardEntry, peers: list[str], port: int = 8000
 
 
 def get_files(paths: List[str], ip: str, port: int = 8000):
+    import tempfile
 
-    timeout = httpx.Timeout(connect=5, read=60, write = 30, pool = 5)
+    timeout = httpx.Timeout(connect=5, read=60, write=30, pool=5)
     url = f"http://{ip}:{port}/api/file"
 
+    temp_dir = Path(tempfile.gettempdir()) / "LanClipboard"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    downloaded_paths = []
+
     with httpx.Client(timeout=timeout) as client:
-        try :
+        try:
             for str_path in paths:
                 file_path = Path(str_path)
                 file_name = file_path.name
@@ -109,19 +115,22 @@ def get_files(paths: List[str], ip: str, port: int = 8000):
                 payload = json_body.model_dump(mode="json")
 
                 with client.stream("POST", url, json=payload) as r:
-
                     r.raise_for_status()
-                    temp_file = file_name
-                    print(f"Saving {file_name} to temp_file")
 
-                    with open(file_name, "wb") as f:
+                    temp_file = temp_dir / file_name
+                    print(f"Saving {file_name} to {temp_file}")
+
+                    with open(temp_file, "wb") as f:
                         chunk_num = 0
                         for chunk in r.iter_bytes(chunk_size=CHUNK_SIZE):
                             chunk_num += 1
                             print(f"Saving chunk # {chunk_num}")
                             f.write(chunk)
-                        print(f"File {file_name} saved")
 
+                    print(f"File {file_name} saved")
+                    downloaded_paths.append(str(temp_file))
 
         except Exception as e:
             print(f"[file request] failed to receive from {ip}: {e}")
+
+    return downloaded_paths
