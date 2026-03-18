@@ -2,6 +2,7 @@ import platform
 import time
 import traceback
 from datetime import datetime, UTC
+from queue import Queue
 
 from api_module import broadcast_to_peers
 from clipboard_storage import ClipboardEntry, ClipboardStorage
@@ -10,11 +11,12 @@ from abstract_clipboard import AbstractClipboard  # your ABC
 PEER_LIST = [
     # "localhost",  # Localhost is for testing purposes only
     # "192.168.100.17", # Win
-    # "192.168.100.61", # Mac
-    "192.168.100.54", # Lenovo Fedora
+    "192.168.100.61", # Mac
+    # "192.168.100.54", # Lenovo Fedora
 
 ]
 
+# args = (app.state.clipboard, app.state.clipboard_storage, local_id, stop_event, app.state.paste_queue, is_wayland,),
 def monitor_clipboard(
     clipboard: AbstractClipboard,
     storage: ClipboardStorage,

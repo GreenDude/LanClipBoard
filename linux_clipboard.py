@@ -26,6 +26,7 @@ def _build_uri_list(paths: list[str]) -> str:
 
 def _build_gnome_copied_files(paths: list[str], mode: str = "copy") -> str:
     return mode + "\n" + _build_uri_list(paths)
+    # return _build_uri_list(paths)
 
 
 def _parse_uri_list(data: str) -> list[str]:
@@ -57,6 +58,7 @@ class WaylandClipboard(AbstractClipboard):
         try:
             types = subprocess.check_output(["wl-paste", "-l"], text=True)
             list_of_types = [entry_type.strip() for entry_type in types.splitlines() if entry_type.strip()]
+            # print (f"Recorded types: \n {list_of_types}")
         except subprocess.CalledProcessError as e:
             print(f"{e.cmd} threw an exception: \n\t{e.returncode}\n\t{e.output}")
         except FileNotFoundError:
@@ -74,33 +76,27 @@ class WaylandClipboard(AbstractClipboard):
 
         try:
             if clipboard_type == "text":
-                output = subprocess.check_output(["wl-paste"], text=True)
+                output = subprocess.check_output(
+                    ["wl-paste"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
                 return "text", output.strip()
 
             elif clipboard_type == "files":
-                # Prefer GNOME format first on Wayland
-                try:
-                    output = subprocess.check_output(
-                        ["wl-paste", "-t", "x-special/gnome-copied-files"],
-                        text=True
-                    )
-                    _, file_list = _parse_gnome_copied_files(output)
-                    if file_list:
-                        return "files", str(file_list)
-                except subprocess.CalledProcessError:
-                    pass
+                # Since your Wayland paste now writes text/uri-list,
+                # read that directly instead of probing gnome-copied-files first.
+                output = subprocess.check_output(
+                    ["wl-paste", "-t", "text/uri-list"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                file_list = _parse_uri_list(output)
+                if file_list:
+                    return "files", str(file_list)
 
-                try:
-                    output = subprocess.check_output(
-                        ["wl-paste", "-t", "text/uri-list"],
-                        text=True
-                    )
-                    file_list = _parse_uri_list(output)
-                    if file_list:
-                        return "files", str(file_list)
-                except subprocess.CalledProcessError:
-                    pass
-
+        except subprocess.CalledProcessError:
+            pass
         except FileNotFoundError:
             print("wl-paste not found")
 
@@ -124,18 +120,16 @@ class WaylandClipboard(AbstractClipboard):
             return
 
         if isinstance(entry, list):
-            # On Wayland, one wl-copy process owns one clipboard payload.
-            # Setting both formats one after another is unreliable because the
-            # second one replaces the first clipboard owner.
-            # For GNOME/Files on Wayland, prefer x-special/gnome-copied-files.
-            gnome_payload = _build_gnome_copied_files(entry, mode="copy")
+
+            uri_list = _build_uri_list(entry)
 
             proc = subprocess.Popen(
-                ["wl-copy", "-t", "x-special/gnome-copied-files"],
+                ["wl-copy", "-t", "text/uri-list"],
                 stdin=subprocess.PIPE,
-                text=True,
+                text = True
             )
-            proc.communicate(gnome_payload)
+
+            proc.communicate(uri_list)
 
             if proc.returncode == 0:
                 print(f"Successfully updated clipboard with files: {entry}")

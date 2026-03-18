@@ -29,10 +29,12 @@ async def async_clipboard_lifespan(app: FastAPI):
     stop_event = Event()
     app.state.stop_event = stop_event
 
+    is_wayland = platform.system() == "Linux" and (os.environ.get("XDG_SESSION_TYPE") == "wayland")
+
     # --- start background threads ---
     clipboard_thread = Thread(
         target=monitor_clipboard,
-        args=(app.state.clipboard, app.state.clipboard_storage, local_id, stop_event),
+        args=(app.state.clipboard, app.state.clipboard_storage, local_id, stop_event,),
         daemon=True,
         name="clipboard_thread",
     )
@@ -51,7 +53,6 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.queue_handler_thread = queue_handler_thread
 
     keyboard_thread = None
-    is_wayland = platform.system() == "Linux" and (os.environ.get("XDG_SESSION_TYPE") == "wayland")
 
     if not is_wayland:
         keyboard_thread = Thread(

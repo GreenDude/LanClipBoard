@@ -1,3 +1,4 @@
+from queue import Queue
 from typing import List
 from urllib.parse import quote
 
@@ -27,6 +28,10 @@ def get_storage(request: Request) -> ClipboardStorage:
     return request.app.state.clipboard_storage
 
 
+def get_paste_queue(request: Request) -> Queue:
+    return request.app.state.paste_queue
+
+
 def build_rest_router():
     rest_router = APIRouter(prefix="/api", tags=["api"])
 
@@ -36,13 +41,14 @@ def build_rest_router():
     async def post_clipboard_entry(
             entry: ClipboardEntry,
             request: Request,
-            cs: ClipboardStorage = Depends(get_storage)
+            cs: ClipboardStorage = Depends(get_storage),
+            pq: Queue = Depends(get_paste_queue),
     ):
 
         entry_origin = request.client.host
         entry.origin = entry_origin
 
-        if cs.store_clipboard_entry(entry_origin, entry):
+        if cs.store_clipboard_entry(entry_origin, entry, pq):
             return {"host": request.client.host, "platform": entry.platform, "entry": entry.entry,
                     "timestamp": entry.timestamp}
         else:
