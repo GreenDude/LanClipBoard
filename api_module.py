@@ -13,6 +13,7 @@ from starlette.responses import StreamingResponse
 
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 
+import platform
 
 class FileRequest(BaseModel):
     path: str
@@ -20,6 +21,28 @@ class FileRequest(BaseModel):
     def set_path(self, path: str):
         self.path = path
         return self
+
+
+class HandshakeRequest(BaseModel):
+    device_id: str
+    device_name: str
+    platform: str
+    protocol_version: int
+    supports_text: bool
+    supports_files: bool
+    supports_encryption: bool
+
+
+class HandshakeResponse(BaseModel):
+    accepted: bool
+    reason: str | None = None
+    device_id: str
+    device_name: str
+    platform: str
+    protocol_version: int
+    supports_text: bool
+    supports_files: bool
+    supports_encryption: bool
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB
 
@@ -35,7 +58,49 @@ def get_paste_queue(request: Request) -> Queue:
 def build_rest_router():
     rest_router = APIRouter(prefix="/api", tags=["api"])
 
+    @rest_router.post("/handshake", response_model=HandshakeResponse)
+    async def handshake(req: HandshakeRequest, request: Request):
+        local_id = request.app.state.local_id
+        local_name = request.app.state.device_name
+        local_platform = platform.system()
 
+        if req.device_id == local_id:
+            return HandshakeResponse(
+                accepted=False,
+                reason="self",
+                device_id=local_id,
+                device_name=local_name,
+                platform=local_platform,
+                protocol_version=1,
+                supports_text=True,
+                supports_files=True,
+                supports_encryption=False,
+            )
+
+        if req.protocol_version != 1:
+            return HandshakeResponse(
+                accepted=False,
+                reason="protocol_mismatch",
+                device_id=local_id,
+                device_name=local_name,
+                platform=local_platform,
+                protocol_version=1,
+                supports_text=True,
+                supports_files=True,
+                supports_encryption=False,
+            )
+
+        return HandshakeResponse(
+            accepted=True,
+            reason=None,
+            device_id=local_id,
+            device_name=local_name,
+            platform=local_platform,
+            protocol_version=1,
+            supports_text=True,
+            supports_files=True,
+            supports_encryption=False,
+        )
 
     @rest_router.post("/clipboard_entry")
     async def post_clipboard_entry(
