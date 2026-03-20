@@ -12,6 +12,7 @@ def monitor_clipboard(
     storage: ClipboardStorage,
     local_id: str,
     stop_event,
+    peer_list: list,
     poll_interval: float = 0.25,
 ) -> None:
     last_fingerprint: tuple[str, str] | None = None  # (type, entry)
@@ -33,7 +34,8 @@ def monitor_clipboard(
                         timestamp=datetime.now(UTC),
                     )
                     storage.store_clipboard_entry(local_id, entry)
-                    broadcast_to_peers(entry)
+                    print(f"Peer List type: {type(peer_list)} contain {peer_list}")
+                    broadcast_to_peers(entry, peer_list)
 
         except Exception:
             print(f"Well that was unexpected {last_fingerprint}")

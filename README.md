@@ -30,3 +30,13 @@ TBC...
 ☢️ Files are saved in project root for now
 
 ☢️ Windows CTRL + Shift + V causes double paste
+
+**Potential issues**
+
+⚠️KDE not tested
+
+⚠️X11 Not tested
+
+⚠️Potential compatibility issues with unexpected Linux Desktop Environments
+
+⚠️To check with 2 Wayland devices (might go into a clipboard update loop)

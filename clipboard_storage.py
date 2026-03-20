@@ -29,8 +29,9 @@ def _new_entry_is_valid(checked_entry: ClipboardEntry) -> bool:
 
 class ClipboardStorage:
 
-    def __init__(self):
+    def __init__(self, local_id):
         self.storage_dict = dict()
+        self.local_id = local_id
 
     def store_clipboard_entry(self, address: str, clip_entry: ClipboardEntry, paste_queue=None) -> bool:
         # Check entry is valid
@@ -49,7 +50,7 @@ class ClipboardStorage:
                 print (f"latest_entry: {latest_entry}")
                 clip_entry_list[:] = [latest_entry] if latest_entry else []
 
-            if _is_wayland and clip_entry.origin != "local":
+            if _is_wayland and clip_entry.origin != self.local_id:
                 paste_queue.put(clip_entry)
             return True
 
