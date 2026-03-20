@@ -1,8 +1,16 @@
+import os
+import platform
+
 from pydantic import BaseModel
 from datetime import datetime, UTC
 
 _supported_formats = ("text", "files")
 _supported_platforms = ("Windows", "Darwin", "Linux")
+
+_is_wayland = (
+    platform.system() == "Linux"
+    and os.environ.get("XDG_SESSION_TYPE") == "wayland"
+)
 
 class ClipboardEntry(BaseModel):
     origin: str
@@ -21,21 +29,15 @@ def _new_entry_is_valid(checked_entry: ClipboardEntry) -> bool:
 
 class ClipboardStorage:
 
-    """
-        storage dict contains client IP and stores current and new clipboard entries as lists.
-        As soon as the entry the old entries are cleared based on the filter
-
-    """
     def __init__(self):
         self.storage_dict = dict()
 
-    def store_clipboard_entry(self, address: str, clip_entry: ClipboardEntry) -> bool:
+    def store_clipboard_entry(self, address: str, clip_entry: ClipboardEntry, paste_queue=None) -> bool:
         # Check entry is valid
         if _new_entry_is_valid(clip_entry):
             #If client ip is registered create a new entry in the dictionary
             if address not in self.storage_dict:
                 self.storage_dict[address] = [clip_entry]
-                return True
 
             else:
                 clip_entry_list = self.storage_dict[address]
@@ -46,7 +48,11 @@ class ClipboardStorage:
                 latest_entry = max(clip_entry_list, key=lambda e: e.timestamp, default=None)
                 print (f"latest_entry: {latest_entry}")
                 clip_entry_list[:] = [latest_entry] if latest_entry else []
-                return True
+
+            if _is_wayland and clip_entry.origin != "local":
+                paste_queue.put(clip_entry)
+            return True
+
 
         return False
 

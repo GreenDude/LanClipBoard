@@ -8,5 +8,5 @@ class AbstractClipboard(ABC):
 
 
     @abstractmethod
-    def paste_clipboard_entry(self):
+    def paste_clipboard_entry(self, entry):
         pass

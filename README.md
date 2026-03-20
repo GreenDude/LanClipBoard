@@ -4,3 +4,29 @@ Could you use a messaging app or something else? You could... but that would be 
 This is exactly the annoyance I ran into, which is why I created this project.
 
 TBC...
+
+**Feature Set**
+
+✅ Cross-platform clipboard
+
+✅ Sharing on LAN
+
+✅ File Transfer
+
+✅ Windows paste
+
+☑️ Read shortcut from config on startup
+
+✅ Linux Wayland paste
+
+✅ Linux X11 paste
+
+☑️ Security
+
+☑️ Available devices discovery (via secure handshake?)
+
+**Known issues**
+
+☢️ Files are saved in project root for now
+
+☢️ Windows CTRL + Shift + V causes double paste
