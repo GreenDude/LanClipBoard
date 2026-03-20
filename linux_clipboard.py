@@ -26,7 +26,6 @@ def _build_uri_list(paths: list[str]) -> str:
 
 def _build_gnome_copied_files(paths: list[str], mode: str = "copy") -> str:
     return mode + "\n" + _build_uri_list(paths)
-    # return _build_uri_list(paths)
 
 
 def _parse_uri_list(data: str) -> list[str]:
@@ -84,8 +83,6 @@ class WaylandClipboard(AbstractClipboard):
                 return "text", output.strip()
 
             elif clipboard_type == "files":
-                # Since your Wayland paste now writes text/uri-list,
-                # read that directly instead of probing gnome-copied-files first.
                 output = subprocess.check_output(
                     ["wl-paste", "-t", "text/uri-list"],
                     text=True,

@@ -29,11 +29,6 @@ def _new_entry_is_valid(checked_entry: ClipboardEntry) -> bool:
 
 class ClipboardStorage:
 
-    """
-        storage dict contains client IP and stores current and new clipboard entries as lists.
-        As soon as the entry the old entries are cleared based on the filter
-
-    """
     def __init__(self):
         self.storage_dict = dict()
 

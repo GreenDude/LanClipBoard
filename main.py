@@ -15,7 +15,6 @@ from paste_queue_handler import paste_queue_handler
 
 @asynccontextmanager
 async def async_clipboard_lifespan(app: FastAPI):
-    # --- init state ---
     app.state.clipboard_storage = ClipboardStorage()
     app.state.clipboard = get_clipboard()
 
@@ -31,7 +30,6 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     is_wayland = platform.system() == "Linux" and (os.environ.get("XDG_SESSION_TYPE") == "wayland")
 
-    # --- start background threads ---
     clipboard_thread = Thread(
         target=monitor_clipboard,
         args=(app.state.clipboard, app.state.clipboard_storage, local_id, stop_event,),
@@ -66,11 +64,9 @@ async def async_clipboard_lifespan(app: FastAPI):
     else:
         print("Wayland detected: keyboard listener disabled")
 
-    # --- app runs here ---
     try:
         yield
     finally:
-        # --- shutdown ---
         stop_event.set()
 
         if keyboard_thread is not None:

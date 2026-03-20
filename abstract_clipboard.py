@@ -1,8 +1,5 @@
 from abc import ABC, abstractmethod
 
-from clipboard_storage import ClipboardEntry
-
-
 class AbstractClipboard(ABC):
 
     @abstractmethod

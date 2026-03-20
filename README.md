@@ -17,9 +17,9 @@ TBC...
 
 ☑️ Read shortcut from config on startup
 
-☑️ Linux Wayland paste
+✅ Linux Wayland paste
 
-☑️ Linux X11 paste
+✅ Linux X11 paste
 
 ☑️ Security
 
@@ -30,5 +30,3 @@ TBC...
 ☢️ Files are saved in project root for now
 
 ☢️ Windows CTRL + Shift + V causes double paste
-
-☢️ Linux support pretty much is a mess

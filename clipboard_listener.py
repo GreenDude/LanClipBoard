@@ -2,21 +2,11 @@ import platform
 import time
 import traceback
 from datetime import datetime, UTC
-from queue import Queue
 
 from api_module import broadcast_to_peers
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 from abstract_clipboard import AbstractClipboard  # your ABC
 
-PEER_LIST = [
-    # "localhost",  # Localhost is for testing purposes only
-    # "192.168.100.17", # Win
-    "192.168.100.61", # Mac
-    # "192.168.100.54", # Lenovo Fedora
-
-]
-
-# args = (app.state.clipboard, app.state.clipboard_storage, local_id, stop_event, app.state.paste_queue, is_wayland,),
 def monitor_clipboard(
     clipboard: AbstractClipboard,
     storage: ClipboardStorage,
@@ -24,15 +14,10 @@ def monitor_clipboard(
     stop_event,
     poll_interval: float = 0.25,
 ) -> None:
-    """
-    Runs in a thread. Polls clipboard and stores new entries when changed.
-    """
     last_fingerprint: tuple[str, str] | None = None  # (type, entry)
 
     while not stop_event.is_set():
         try:
-            # Expect your clipboard implementation returns something like:
-            # ("text", "hello world") or ("files", "/path/a;/path/b")
             clip_type, clip_value = clipboard.get_clipboard_entry()
 
             if clip_value:
@@ -42,14 +27,13 @@ def monitor_clipboard(
 
                     entry = ClipboardEntry(
                         origin=local_id,
-                        platform=platform.system(),      # e.g. "Linux"/"Darwin"/"Windows"
-                        type=clip_type,         # "text"/"files"
+                        platform=platform.system(),
+                        type=clip_type,
                         entry=clip_value,
                         timestamp=datetime.now(UTC),
                     )
-                    # store under a dedicated key for "local machine"
                     storage.store_clipboard_entry(local_id, entry)
-                    broadcast_to_peers(entry, PEER_LIST)
+                    broadcast_to_peers(entry)
 
         except Exception:
             print(f"Well that was unexpected {last_fingerprint}")

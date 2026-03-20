@@ -43,10 +43,10 @@ def monitor_keyboard(stop_event: Event,
         k = normalize_key(key)
 
         pressed.add(k)
-        print(pressed)
+        # print(pressed)
 
         if PASTE_HOTKEY <= pressed:
-            print("YAY (paste hotkey)")
+            # print("YAY (paste hotkey)")
             if not is_pasting:
                 paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
                 is_pasting= True

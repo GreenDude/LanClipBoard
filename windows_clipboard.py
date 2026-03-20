@@ -58,7 +58,6 @@ class WindowsClipboard(AbstractClipboard):
                 clipboard_updated = True
 
             elif isinstance(entry, list):
-                # CF_HDROP expects a double-null-terminated string list
                 paths = [os.path.normpath(p) for p in entry]
                 drop_files = "\0".join(paths) + "\0\0"
                 win32clipboard.SetClipboardData(win32con.CF_HDROP, drop_files)

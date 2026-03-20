@@ -88,7 +88,11 @@ def build_rest_router():
     return rest_router
 
 
-def broadcast_to_peers(entry: ClipboardEntry, peers: list[str], port: int = 8000) -> None:
+def broadcast_to_peers(entry: ClipboardEntry, port: int = 8000) -> None:
+    peers = [
+        "localhost",  # Localhost is for testing purposes only
+    ]
+
     payload = entry.model_dump(mode="json")  # datetime -> ISO string
 
     with httpx.Client(timeout=2) as client:
