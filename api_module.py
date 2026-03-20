@@ -153,10 +153,11 @@ def build_rest_router():
     return rest_router
 
 
-def broadcast_to_peers(entry: ClipboardEntry, port: int = 8000) -> None:
-    peers = [
-        "localhost",  # Localhost is for testing purposes only
-    ]
+def broadcast_to_peers(entry: ClipboardEntry, peers: list = None, port: int = 8000) -> None:
+    if peers is None:
+        peers = [
+            "localhost",  # Localhost is for testing purposes only
+        ]
 
     payload = entry.model_dump(mode="json")  # datetime -> ISO string
 
@@ -167,6 +168,7 @@ def broadcast_to_peers(entry: ClipboardEntry, port: int = 8000) -> None:
                 r = client.post(url, json=payload)
                 r.raise_for_status()
             except Exception as e:
+                print(f"The type of list is {type(peers)}")
                 print(f"[broadcast] failed to send to {ip}: {e}")
 
 

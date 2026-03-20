@@ -15,7 +15,7 @@ from clipboard_storage import ClipboardStorage
 from keyboard_listener import monitor_keyboard
 from paste_queue_handler import paste_queue_handler
 
-def get_lan_ip():
+def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         # Connect to an external address (doesn't need to be reachable)
@@ -30,7 +30,9 @@ def get_lan_ip():
 
 @asynccontextmanager
 async def async_clipboard_lifespan(app: FastAPI):
-    app.state.local_id = platform.system() + "@" + get_lan_ip()
+    app.state.local_ip = get_local_ip()
+    app.state.local_id = platform.system() + "@" + app.state.local_ip
+    app.state.peer_list = []
 
     app.state.clipboard_storage = ClipboardStorage(app.state.local_id)
     app.state.clipboard = get_clipboard()
@@ -50,7 +52,7 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     clipboard_thread = Thread(
         target=monitor_clipboard,
-        args=(app.state.clipboard, app.state.clipboard_storage, app.state.local_id, stop_event,),
+        args=(app.state.clipboard, app.state.clipboard_storage, app.state.local_id, stop_event, app.state.peer_list,),
         daemon=True,
         name="clipboard_thread",
     )
@@ -64,10 +66,12 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     discovery_service = LanClipboardDiscovery(
         local_id=app.state.local_id,
+        local_ip=app.state.local_ip,
         device_name=app.state.device_name,
         platform_name=platform.system(),
         port=8000,
         protocol_version=1,
+        peer_list=app.state.peer_list,
     )
 
     await asyncio.to_thread(discovery_service.start)

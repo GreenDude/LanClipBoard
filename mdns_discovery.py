@@ -27,12 +27,15 @@ class LanClipboardDiscovery:
     def __init__(
         self,
         local_id: str,
+        local_ip: str,
         device_name: str,
         platform_name: str,
         port: int,
         protocol_version: int = 1,
+        peer_list = None,
     ):
         self.local_id = local_id
+        self.local_ip = local_ip
         self.device_name = device_name
         self.platform_name = platform_name
         self.port = port
@@ -45,11 +48,12 @@ class LanClipboardDiscovery:
         self._stop_event = threading.Event()
         self._handshake_lock = threading.Lock()
         self._seen = {}  # device_id -> last_seen_ts
+        self.peer_list = peer_list
 
     def start(self):
         self.zeroconf = Zeroconf(ip_version=IPVersion.All)
 
-        ip_addr = self._get_local_ip()
+        ip_addr = self.local_ip
         if not ip_addr:
             raise RuntimeError("Could not determine local IP for Zeroconf advertisement")
 
@@ -162,12 +166,3 @@ class LanClipboardDiscovery:
             f"[discovery] handshake accepted by "
             f"{data.get('device_name')} ({data.get('device_id')}) at {ip}:{port}"
         )
-
-    @staticmethod
-    def _get_local_ip() -> Optional[str]:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                return s.getsockname()[0]
-        except Exception:
-            return None
