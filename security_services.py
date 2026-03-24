@@ -1,9 +1,19 @@
+import io
 import json
+import platform
+import socket
+from datetime import datetime, UTC
+from typing import cast, Any
+
+import pyzipper
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwcrypto import jwk, jwe
+
+import api_module
+
 
 #TODO: expand configurable key pair encryption/decryption
 def generate_key_pair(configured_exponent=65537,
@@ -33,6 +43,29 @@ def generate_key_pair(configured_exponent=65537,
     )
 
     return encoded_private_key, encoded_public_key
+
+
+def package_keys(private_key: bytes, public_key: bytes, archive_password: bytes = None):
+    local_ip = api_module.get_local_ip()
+    arc_name = f"key_{platform.system()}_{local_ip}_{str(datetime.now(UTC))}.ska"
+
+
+    with pyzipper.AESZipFile(arc_name,
+                             "w",
+                             compression=pyzipper.ZIP_DEFLATED,) as zf:
+        if archive_password is not None:
+            zf.setpassword(archive_password)
+            zf.setencryption(pyzipper.WZ_AES, nbits=256)
+        zf.writestr("private_key.pem", private_key)
+        zf.writestr("public_key.pem", public_key)
+
+    return arc_name
+
+
+def unpack_keys(arc, archive_password: bytes = None):
+    with pyzipper.AESZipFile(arc) as zf:
+        zf.setpassword(archive_password)
+        zf.extractall(".")
 
 
 def check_key_pair(private_key_pem, public_key_pem, private_key_password=None):
@@ -69,13 +102,15 @@ def encrypt(public_key, json_text):
 
     plaintext = json.dumps(json_text)
 
+    protected_header = cast(Any, {
+        "alg": "RSA-OAEP-256",
+        "enc": "A256GCM",
+        "cty": "JWT"
+    })
+
     token = jwe.JWE(
         plaintext.encode("utf-8"),
-        protected={
-            "alg": "RSA-OAEP-256",
-            "enc": "A256GCM",
-            "cty": "JWT"
-        }
+        protected=protected_header,
     )
     token.add_recipient(public_jwk)
 
@@ -111,4 +146,7 @@ if __name__ == "__main__":
     print(f"Got encrypted result: \n\t{encrypted}")
     decrypted = decrypt(priv_key, encrypted, pwd)
     print(f"Got decrypted result: \n\t{decrypted}")
+
+    arc_name = package_keys(priv_key, pub_key, pwd)
+    unpack_keys(arc_name, pwd)
 

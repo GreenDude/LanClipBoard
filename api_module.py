@@ -1,3 +1,4 @@
+import socket
 from queue import Queue
 from typing import List
 from urllib.parse import quote
@@ -45,6 +46,19 @@ class HandshakeResponse(BaseModel):
     supports_encryption: bool
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB
+
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Connect to an external address (doesn't need to be reachable)
+        s.connect(('8.8.8.8', 80))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1' # Fallback to loopback if no network connection
+    finally:
+        s.close()
+    return IP
 
 
 def get_storage(request: Request) -> ClipboardStorage:

@@ -9,23 +9,11 @@ import socket
 
 from mdns_discovery import LanClipboardDiscovery
 from clipboard_factory import get_clipboard
-from api_module import build_rest_router
+from api_module import build_rest_router, get_local_ip
 from clipboard_listener import monitor_clipboard
 from clipboard_storage import ClipboardStorage
 from keyboard_listener import monitor_keyboard
 from paste_queue_handler import paste_queue_handler
-
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # Connect to an external address (doesn't need to be reachable)
-        s.connect(('8.8.8.8', 80))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1' # Fallback to loopback if no network connection
-    finally:
-        s.close()
-    return IP
 
 
 @asynccontextmanager
