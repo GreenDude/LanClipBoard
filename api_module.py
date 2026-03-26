@@ -16,6 +16,12 @@ from clipboard_storage import ClipboardEntry, ClipboardStorage
 
 import platform
 
+from typing import Optional
+from fastapi import HTTPException
+import os
+
+import security_services
+
 class FileRequest(BaseModel):
     path: str
 
@@ -47,6 +53,45 @@ class HandshakeResponse(BaseModel):
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB
 
+class EncryptedPayload(BaseModel):
+    encrypted_jwt: str
+
+
+def _try_decrypt_handshake_body(request: Request, raw_body: bytes) -> HandshakeRequest:
+    """
+    Accept either:
+      - plain JSON matching HandshakeRequest
+      - {"encrypted_jwt": "<JWE>"} wrapper, which is decrypted into HandshakeRequest
+
+    Decryption only happens if the server has a configured private key.
+    """
+    try:
+        # First, try plain JSON
+        return HandshakeRequest.model_validate_json(raw_body)
+    except Exception:
+        pass
+
+    try:
+        encrypted_payload = EncryptedPayload.model_validate_json(raw_body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid handshake payload") from e
+
+    private_key = getattr(request.app.state, "private_key_pem", None)
+    private_key_password = getattr(request.app.state, "private_key_password", None)
+
+    if private_key is None:
+        raise HTTPException(status_code=400, detail="Encrypted handshake not supported on this node")
+
+    try:
+        decrypted_dict = security_services.decrypt(
+            private_key=private_key,
+            encrypted_jwt=encrypted_payload.encrypted_jwt,
+            password=private_key_password,
+        )
+        return HandshakeRequest.model_validate(decrypted_dict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Failed to decrypt handshake payload") from e
+
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -73,7 +118,11 @@ def build_rest_router():
     rest_router = APIRouter(prefix="/api", tags=["api"])
 
     @rest_router.post("/handshake", response_model=HandshakeResponse)
-    async def handshake(req: HandshakeRequest, request: Request):
+    async def handshake(request: Request):
+        print(request)
+        raw_body = await request.body()
+        req = _try_decrypt_handshake_body(request, raw_body)
+
         local_id = request.app.state.local_id
         local_name = request.app.state.device_name
         local_platform = platform.system()
@@ -113,8 +162,16 @@ def build_rest_router():
             protocol_version=1,
             supports_text=True,
             supports_files=True,
-            supports_encryption=False,
+            supports_encryption=request.app.state.private_key_pem is not None,
         )
+
+
+    @rest_router.get("/peers")
+    async def get_peers(
+            request: Request,
+    ):
+        return request.app.state.peer_list
+
 
     @rest_router.post("/clipboard_entry")
     async def post_clipboard_entry(

@@ -1,24 +1,11 @@
 import socket
-import threading
 import time
 from typing import Optional
 
 import httpx
-from zeroconf import IPVersion, ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
+from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 
-
-class LanClipboardListener(ServiceListener):
-    def __init__(self, discovery_service: "LanClipboardDiscovery"):
-        self.discovery_service = discovery_service
-
-    def add_service(self, zc: Zeroconf, service_type: str, name: str) -> None:
-        self.discovery_service.handle_service_update(service_type, name)
-
-    def update_service(self, zc: Zeroconf, service_type: str, name: str) -> None:
-        self.discovery_service.handle_service_update(service_type, name)
-
-    def remove_service(self, zc: Zeroconf, service_type: str, name: str) -> None:
-        print(f"[discovery] service removed: {name}")
+import security_services
 
 
 class LanClipboardDiscovery:
@@ -32,7 +19,8 @@ class LanClipboardDiscovery:
         platform_name: str,
         port: int,
         protocol_version: int = 1,
-        peer_list = None,
+        peer_list=None,
+        peer_public_key_pem: bytes | None = None,
     ):
         self.local_id = local_id
         self.local_ip = local_ip
@@ -40,71 +28,79 @@ class LanClipboardDiscovery:
         self.platform_name = platform_name
         self.port = port
         self.protocol_version = protocol_version
+        self.peer_list = peer_list if peer_list is not None else []
+        self.peer_public_key_pem = peer_public_key_pem
 
-        self.zeroconf: Optional[Zeroconf] = None
-        self.service_info: Optional[ServiceInfo] = None
-        self.browser: Optional[ServiceBrowser] = None
+        self.aiozc: Optional[AsyncZeroconf] = None
+        self.service_info = None
+        self._seen = {}
+        self._stopped = False
 
-        self._stop_event = threading.Event()
-        self._handshake_lock = threading.Lock()
-        self._seen = {}  # device_id -> last_seen_ts
-        self.peer_list = peer_list
+    async def start(self):
+        from zeroconf import IPVersion, ServiceInfo
 
-    def start(self):
-        self.zeroconf = Zeroconf(ip_version=IPVersion.All)
-
-        ip_addr = self.local_ip
-        if not ip_addr:
-            raise RuntimeError("Could not determine local IP for Zeroconf advertisement")
+        safe_device_name = self.device_name.removesuffix(".local")
+        service_name = f"{safe_device_name}.{self.SERVICE_TYPE}"
 
         properties = {
             b"device_id": self.local_id.encode("utf-8"),
-            b"device_name": self.device_name.encode("utf-8"),
+            b"device_name": safe_device_name.encode("utf-8"),
             b"platform": self.platform_name.encode("utf-8"),
             b"protocol_version": str(self.protocol_version).encode("utf-8"),
         }
 
-        service_name = f"{self.device_name}.{self.SERVICE_TYPE}"
+        self.aiozc = AsyncZeroconf(
+            interfaces=[self.local_ip],
+            ip_version=IPVersion.V4Only,
+        )
 
         self.service_info = ServiceInfo(
             type_=self.SERVICE_TYPE,
             name=service_name,
-            addresses=[socket.inet_aton(ip_addr)],
+            addresses=[socket.inet_aton(self.local_ip)],
             port=self.port,
             properties=properties,
-            server=f"{socket.gethostname()}.local.",
+            server=f"{safe_device_name}.local.",
         )
 
-        self.zeroconf.register_service(self.service_info)
-        print(f"[discovery] registered {service_name} at {ip_addr}:{self.port}")
+        await self.aiozc.async_register_service(self.service_info)
+        print(f"[discovery] registered {service_name} at {self.local_ip}:{self.port}")
 
-        listener = LanClipboardListener(self)
-        self.browser = ServiceBrowser(self.zeroconf, self.SERVICE_TYPE, listener=listener)
+        await self.aiozc.async_add_service_listener(self.SERVICE_TYPE, self)
         print("[discovery] browser started")
 
-    def stop(self):
-        self._stop_event.set()
 
-        if self.browser is not None:
-            self.browser.cancel()
-
-        if self.zeroconf is not None and self.service_info is not None:
-            try:
-                self.zeroconf.unregister_service(self.service_info)
-            except Exception as e:
-                print(f"[discovery] unregister failed: {e}")
-
-        if self.zeroconf is not None:
-            self.zeroconf.close()
-
+    async def stop(self):
+        self._stopped = True
+        if self.aiozc is not None:
+            await self.aiozc.async_close()
         print("[discovery] stopped")
 
-    def handle_service_update(self, service_type: str, name: str):
-        if self._stop_event.is_set() or self.zeroconf is None:
+    # ---- ServiceListener-style callbacks used by async_add_service_listener ----
+
+    def add_service(self, zc, service_type: str, name: str) -> None:
+        print(f"[discovery] add_service: {name}")
+        import asyncio
+        asyncio.create_task(self.handle_service_update(service_type, name))
+
+    def update_service(self, zc, service_type: str, name: str) -> None:
+        print(f"[discovery] update_service: {name}")
+        import asyncio
+        asyncio.create_task(self.handle_service_update(service_type, name))
+
+    def remove_service(self, zc, service_type: str, name: str) -> None:
+        print(f"[discovery] remove_service: {name}")
+
+    async def handle_service_update(self, service_type: str, name: str):
+        if self._stopped or self.aiozc is None:
             return
 
-        info = self.zeroconf.get_service_info(service_type, name)
-        if info is None:
+        print(f"[discovery] service update: {name}")
+
+        info = AsyncServiceInfo(service_type, name)
+        ok = await info.async_request(self.aiozc.zeroconf, timeout=3000)
+        if not ok:
+            print(f"[discovery] no service info for {name}")
             return
 
         props = {
@@ -113,28 +109,35 @@ class LanClipboardDiscovery:
             for k, v in info.properties.items()
         }
 
+        print(f"[discovery] resolved props for {name}: {props}")
+
         remote_id = props.get("device_id")
-        if not remote_id or remote_id == self.local_id:
+        if not remote_id:
+            print(f"[discovery] ignoring {name}: no device_id")
+            return
+
+        if remote_id == self.local_id:
+            print(f"[discovery] ignoring self: {remote_id}")
             return
 
         addresses = info.parsed_addresses()
         if not addresses:
+            print(f"[discovery] ignoring {name}: no addresses")
             return
 
         ip = addresses[0]
         port = info.port
 
-        with self._handshake_lock:
-            now = time.time()
-            last_seen = self._seen.get(remote_id, 0)
-            if now - last_seen < 5:
-                return
-            self._seen[remote_id] = now
+        now = time.time()
+        last_seen = self._seen.get(remote_id, 0)
+        if now - last_seen < 5:
+            return
+        self._seen[remote_id] = now
 
         print(f"[discovery] found peer {remote_id} at {ip}:{port}")
-        self._handshake_with_peer(ip, port)
+        await self._handshake_with_peer(ip, port)
 
-    def _handshake_with_peer(self, ip: str, port: int):
+    async def _handshake_with_peer(self, ip: str, port: int):
         url = f"http://{ip}:{port}/api/handshake"
 
         payload = {
@@ -144,16 +147,23 @@ class LanClipboardDiscovery:
             "protocol_version": self.protocol_version,
             "supports_text": True,
             "supports_files": True,
-            "supports_encryption": False,
+            "supports_encryption": self.peer_public_key_pem is not None,
         }
 
         try:
-            with httpx.Client(timeout=3.0) as client:
-                print(f'attempting handshake with peer {ip}:{port}')
-                r = client.post(url, json=payload)
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                print(f"[discovery] attempting handshake with peer {ip}:{port}")
+
+                if self.peer_public_key_pem is not None:
+                    encrypted_jwt = security_services.encrypt(self.peer_public_key_pem, payload)
+                    request_body = {"encrypted_jwt": encrypted_jwt}
+                    r = await client.post(url, json=request_body)
+                else:
+                    r = await client.post(url, json=payload)
+
                 r.raise_for_status()
                 data = r.json()
-                print(f'handshake with peer {ip}:{port} result: {data}')
+                print(f"[discovery] handshake with peer {ip}:{port} result: {data}")
         except Exception as e:
             print(f"[discovery] handshake failed with {ip}:{port}: {e}")
             return
@@ -161,6 +171,10 @@ class LanClipboardDiscovery:
         if not data.get("accepted"):
             print(f"[discovery] handshake rejected by {ip}:{port}: {data.get('reason')}")
             return
+
+        if ip not in self.peer_list:
+            self.peer_list.append(ip)
+            print(f"[discovery] added peer {ip} to peer_list")
 
         print(
             f"[discovery] handshake accepted by "

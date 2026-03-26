@@ -1,7 +1,5 @@
-import io
 import json
 import platform
-import socket
 from datetime import datetime, UTC
 from typing import cast, Any
 

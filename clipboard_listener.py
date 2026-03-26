@@ -7,14 +7,12 @@ from api_module import broadcast_to_peers
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 from abstract_clipboard import AbstractClipboard  # your ABC
 
-def monitor_clipboard(
-    clipboard: AbstractClipboard,
-    storage: ClipboardStorage,
-    local_id: str,
-    stop_event,
-    peer_list: list,
-    poll_interval: float = 0.25,
-) -> None:
+def monitor_clipboard(clipboard,
+                      clipboard_storage,
+                      local_id,
+                      stop_event,
+                      peer_list,
+                      app_config) -> None:
     last_fingerprint: tuple[str, str] | None = None  # (type, entry)
 
     while not stop_event.is_set():
@@ -33,7 +31,7 @@ def monitor_clipboard(
                         entry=clip_value,
                         timestamp=datetime.now(UTC),
                     )
-                    storage.store_clipboard_entry(local_id, entry)
+                    clipboard_storage.store_clipboard_entry(local_id, entry)
                     print(f"Peer List type: {type(peer_list)} contain {peer_list}")
                     broadcast_to_peers(entry, peer_list)
 
@@ -43,4 +41,5 @@ def monitor_clipboard(
             # Keep the thread alive; optionally log
             pass
 
-        time.sleep(poll_interval)
+        sleep_time = app_config.clipboard.poll_interval_ms / 1000
+        time.sleep(sleep_time)
