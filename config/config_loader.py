@@ -12,6 +12,7 @@ class DeviceConfig(BaseModel):
 class NetworkConfig(BaseModel):
     port: int
     discovery: bool
+    bootstrap_peers: list[str] = []
 
 
 class HotkeyConfig(BaseModel):

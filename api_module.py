@@ -127,6 +127,11 @@ def build_rest_router():
         local_name = request.app.state.device_name
         local_platform = platform.system()
 
+        remote_ip = request.client.host
+        if remote_ip not in request.app.state.peer_list:
+            request.app.state.peer_list.append(remote_ip)
+            print(f"[handshake] added peer {remote_ip} to peer_list")
+
         if req.device_id == local_id:
             return HandshakeResponse(
                 accepted=False,

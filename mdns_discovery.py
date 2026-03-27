@@ -54,6 +54,10 @@ class LanClipboardDiscovery:
             ip_version=IPVersion.V4Only,
         )
 
+        self.aiozc = AsyncZeroconf(
+            ip_version=IPVersion.All,
+        )
+
         self.service_info = ServiceInfo(
             type_=self.SERVICE_TYPE,
             name=service_name,
@@ -69,6 +73,13 @@ class LanClipboardDiscovery:
         await self.aiozc.async_add_service_listener(self.SERVICE_TYPE, self)
         print("[discovery] browser started")
 
+    async def bootstrap_handshake(self, peers: list[str]):
+        for ip in peers:
+            if not ip or ip == self.local_ip:
+                continue
+
+            print(f"[discovery] bootstrap handshake with {ip}:{self.port}")
+            await self._handshake_with_peer(ip, self.port)
 
     async def stop(self):
         self._stopped = True
@@ -121,12 +132,18 @@ class LanClipboardDiscovery:
             return
 
         addresses = info.parsed_addresses()
-        if not addresses:
-            print(f"[discovery] ignoring {name}: no addresses")
+        # TODO: Add IPV6 support
+        ipv4_addresses = [a for a in addresses if "." in a]
+
+        if not ipv4_addresses:
+            print(f"[discovery] no IPv4 address for {name}, skipping")
             return
 
-        ip = addresses[0]
+        ip = ipv4_addresses[0]
         port = info.port
+
+        print(f"[discovery] all addresses: {addresses}")
+        print(f"[discovery] selected IPv4: {ip}")
 
         now = time.time()
         last_seen = self._seen.get(remote_id, 0)

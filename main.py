@@ -141,6 +141,9 @@ async def async_clipboard_lifespan(app: FastAPI):
         await discovery_service.start()
     app.state.discovery_service = discovery_service
 
+    if app.state.config.network.bootstrap_peers:
+        await discovery_service.bootstrap_handshake(app.state.config.network.bootstrap_peers)
+
     clipboard_thread.start()
     queue_handler_thread.start()
 
