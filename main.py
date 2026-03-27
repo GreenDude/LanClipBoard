@@ -136,13 +136,17 @@ async def async_clipboard_lifespan(app: FastAPI):
         protocol_version=1,
         peer_list=app.state.peer_list,
     )
+
     print (f"app.state.config.network.discovery == {app.state.config.network.discovery}")
     if app.state.config.network.discovery:
         await discovery_service.start()
     app.state.discovery_service = discovery_service
 
-    if app.state.config.network.bootstrap_peers:
-        await discovery_service.bootstrap_handshake(app.state.config.network.bootstrap_peers)
+    bootstrap_peers = app.state.config.network.bootstrap_peers or []
+    if bootstrap_peers:
+        await discovery_service.bootstrap_handshake(bootstrap_peers)
+    else:
+        print("[discovery] no bootstrap peers configured, relying on service discovery only")
 
     clipboard_thread.start()
     queue_handler_thread.start()

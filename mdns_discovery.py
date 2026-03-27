@@ -73,7 +73,11 @@ class LanClipboardDiscovery:
         await self.aiozc.async_add_service_listener(self.SERVICE_TYPE, self)
         print("[discovery] browser started")
 
-    async def bootstrap_handshake(self, peers: list[str]):
+    async def bootstrap_handshake(self, peers: list[str] | None):
+        if not peers:
+            print("[discovery] bootstrap skipped: no peers configured")
+            return
+
         for ip in peers:
             if not ip or ip == self.local_ip:
                 continue

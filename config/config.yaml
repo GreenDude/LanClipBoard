@@ -5,6 +5,7 @@ device:
 network:
   port: 8000
   discovery: true
+  bootstrap_peers: []
 
 hotkeys:
   paste: ["ctrl", "shift", "v"]
