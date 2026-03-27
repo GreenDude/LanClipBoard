@@ -7,10 +7,6 @@ import time
 
 from clipboard_storage import ClipboardStorage
 
-PASTE_HOTKEY = {"Key.cmd", "Key.shift", "v"}  # Cmd+Shift+V. TODO: Read from config
-# PASTE_HOTKEY = {"Key.ctrl", "Key.shift", "Key.insert"}  # ctrl+Shift+Insert. TODO: Read from config
-
-
 def normalize_key(key) -> str:
     if hasattr(key, "char") and key.char:
         if len(key.char) == 1 and 1 <= ord(key.char) <= 26:
@@ -31,10 +27,12 @@ def normalize_key(key) -> str:
         key_str = key_str[:key_str.index("_")]
     return key_str
 
+
 def monitor_keyboard(stop_event: Event,
                      paste_queue: Queue,
                      clipboard_storage: ClipboardStorage,
-                     is_pasting: bool
+                     is_pasting: bool,
+                     paste_hotkey: set[str]
                      ) -> None:
     pressed = set()
 
@@ -45,7 +43,7 @@ def monitor_keyboard(stop_event: Event,
         pressed.add(k)
         # print(pressed)
 
-        if PASTE_HOTKEY <= pressed:
+        if paste_hotkey <= pressed:
             # print("YAY (paste hotkey)")
             if not is_pasting:
                 paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
@@ -56,7 +54,7 @@ def monitor_keyboard(stop_event: Event,
         nonlocal is_pasting
         k = normalize_key(key)
         pressed.discard(k)
-        if k in PASTE_HOTKEY:
+        if k in paste_hotkey:
             is_pasting = False
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)

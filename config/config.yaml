@@ -1,0 +1,22 @@
+device:
+  id: "auto"
+  name: "auto"
+
+network:
+  port: 8000
+  discovery: true
+  bootstrap_peers: []
+
+hotkeys:
+  paste: ["ctrl", "shift", "v"]
+
+clipboard:
+  poll_interval_ms: 200
+
+security:
+  enabled: false
+  key_archive: null
+  key_password: null
+
+peers:
+  auto_accept: true
