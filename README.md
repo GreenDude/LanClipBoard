@@ -15,7 +15,7 @@ TBC...
 
 ✅ Windows paste
 
-☑️ Read shortcut from config on startup
+✅ Read shortcut from config on startup
 
 ✅ Linux Wayland paste
 
@@ -23,13 +23,15 @@ TBC...
 
 ☑️ Security
 
-☑️ Available devices discovery (via secure handshake?)
+ Available devices discovery (via secure handshake?)
 
 **Known issues**
 
-☢️ Files are saved in project root for now
+☢️ Files are saved in the project root for now
 
 ☢️ Windows CTRL + Shift + V causes double paste
+
+☢️ Wayland flickering
 
 **Potential issues**
 

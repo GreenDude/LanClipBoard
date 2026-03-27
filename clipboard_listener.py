@@ -1,4 +1,5 @@
 import platform
+from threading import Event
 import time
 import traceback
 from datetime import datetime, UTC
@@ -6,13 +7,18 @@ from datetime import datetime, UTC
 from api_module import broadcast_to_peers
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 from abstract_clipboard import AbstractClipboard  # your ABC
+from config.config_loader import AppConfig
 
-def monitor_clipboard(clipboard,
-                      clipboard_storage,
-                      local_id,
-                      stop_event,
-                      peer_list,
-                      app_config) -> None:
+
+def monitor_clipboard(
+        clipboard: AbstractClipboard,
+        clipboard_storage: ClipboardStorage,
+        local_id: str,
+        stop_event: Event,
+        peer_list: list,
+        app_config: AppConfig
+        ) -> None:
+
     last_fingerprint: tuple[str, str] | None = None  # (type, entry)
 
     while not stop_event.is_set():
