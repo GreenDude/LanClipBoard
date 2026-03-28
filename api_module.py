@@ -1,6 +1,6 @@
 import socket
 from queue import Queue
-from typing import List
+from typing import List, Any
 from urllib.parse import quote
 
 import aiofiles
@@ -57,30 +57,34 @@ class EncryptedPayload(BaseModel):
     encrypted_jwt: str
 
 
-def _try_decrypt_handshake_body(request: Request, raw_body: bytes) -> HandshakeRequest:
+def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseModel]) -> str:
     """
-    Accept either:
-      - plain JSON matching HandshakeRequest
-      - {"encrypted_jwt": "<JWE>"} wrapper, which is decrypted into HandshakeRequest
+    Returns a JSON string.
 
-    Decryption only happens if the server has a configured private key.
+    Accepts either:
+      1. plain JSON matching model_cls
+      2. {"encrypted_jwt": "..."} wrapper, which is decrypted into model_cls-compatible JSON
+
+    This keeps endpoint handlers simple:
+        body_json = _try_decrypt_body(request, raw_body, SomeModel)
+        body = SomeModel.model_validate_json(body_json)
     """
     try:
-        # First, try plain JSON
-        return HandshakeRequest.model_validate_json(raw_body)
+        model_cls.model_validate_json(raw_body)
+        return raw_body.decode("utf-8")
     except Exception:
         pass
 
     try:
         encrypted_payload = EncryptedPayload.model_validate_json(raw_body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid handshake payload") from e
+        raise HTTPException(status_code=400, detail="Invalid request payload") from e
 
     private_key = getattr(request.app.state, "private_key_pem", None)
     private_key_password = getattr(request.app.state, "private_key_password", None)
 
     if private_key is None:
-        raise HTTPException(status_code=400, detail="Encrypted handshake not supported on this node")
+        raise HTTPException(status_code=400, detail="Encrypted payload not supported on this node")
 
     try:
         decrypted_dict = security_services.decrypt(
@@ -88,9 +92,34 @@ def _try_decrypt_handshake_body(request: Request, raw_body: bytes) -> HandshakeR
             encrypted_jwt=encrypted_payload.encrypted_jwt,
             password=private_key_password,
         )
-        return HandshakeRequest.model_validate(decrypted_dict)
+        model_cls.model_validate(decrypted_dict)
+        return json.dumps(decrypted_dict)
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Failed to decrypt handshake payload") from e
+        raise HTTPException(status_code=400, detail="Failed to decrypt payload") from e
+
+
+def _try_encrypt_body(payload: Any, peer_public_key_pem: bytes | None) -> dict:
+    """
+    Returns a JSON-serializable request body.
+
+    If peer_public_key_pem is provided:
+        {"encrypted_jwt": "<jwe>"}
+
+    Otherwise:
+        plain JSON dict
+    """
+    if isinstance(payload, BaseModel):
+        payload_dict = payload.model_dump(mode="json")
+    elif isinstance(payload, dict):
+        payload_dict = payload
+    else:
+        raise TypeError(f"Unsupported payload type: {type(payload)}")
+
+    if peer_public_key_pem is None:
+        return payload_dict
+
+    encrypted_jwt = security_services.encrypt(peer_public_key_pem, payload_dict)
+    return {"encrypted_jwt": encrypted_jwt}
 
 
 def get_local_ip():
@@ -119,9 +148,9 @@ def build_rest_router():
 
     @rest_router.post("/handshake", response_model=HandshakeResponse)
     async def handshake(request: Request):
-        print(request)
         raw_body = await request.body()
-        req = _try_decrypt_handshake_body(request, raw_body)
+        req_json = _try_decrypt_body(request, raw_body, HandshakeRequest)
+        req = HandshakeRequest.model_validate_json(req_json)
 
         local_id = request.app.state.local_id
         local_name = request.app.state.device_name
@@ -180,11 +209,14 @@ def build_rest_router():
 
     @rest_router.post("/clipboard_entry")
     async def post_clipboard_entry(
-            entry: ClipboardEntry,
             request: Request,
             cs: ClipboardStorage = Depends(get_storage),
             pq: Queue = Depends(get_paste_queue),
     ):
+
+        raw_body = await request.body()
+        entry_json = _try_decrypt_body(request, raw_body, ClipboardEntry)
+        entry = ClipboardEntry.model_validate_json(entry_json)
 
         entry_origin = request.client.host
         entry.origin = entry_origin
@@ -229,22 +261,45 @@ def build_rest_router():
     return rest_router
 
 
-def broadcast_to_peers(entry: ClipboardEntry, peers: list = None, port: int = 8000) -> None:
+def broadcast_to_peers(
+    entry: ClipboardEntry,
+    peers: list = None,
+    port: int = 8000,
+    peer_public_key_pem: bytes | None = None,
+    local_public_key_pem: bytes | None = None,
+    local_private_key_pem: bytes | None = None,
+    local_private_key_password: bytes | None = None,
+) -> None:
     if peers is None:
-        peers = [
-            "localhost",  # Localhost is for testing purposes only
-        ]
+        peers = ["localhost"]
 
-    payload = entry.model_dump(mode="json")  # datetime -> ISO string
+    headers = {}
+    if local_public_key_pem is not None:
+        headers["x-peer-public-key"] = local_public_key_pem.decode("utf-8")
+
+    request_body = _try_encrypt_body(entry, peer_public_key_pem)
 
     with httpx.Client(timeout=2) as client:
         for ip in peers:
             url = f"http://{ip}:{port}/api/clipboard_entry"
             try:
-                r = client.post(url, json=payload)
+                r = client.post(url, json=request_body, headers=headers)
                 r.raise_for_status()
+
+                if local_private_key_pem is not None:
+                    try:
+                        response_json = r.json()
+                        if "encrypted_jwt" in response_json:
+                            decrypted_response = security_services.decrypt(
+                                private_key=local_private_key_pem,
+                                encrypted_jwt=response_json["encrypted_jwt"],
+                                password=local_private_key_password,
+                            )
+                            print(f"[broadcast] decrypted response from {ip}: {decrypted_response}")
+                    except Exception as e:
+                        print(f"[broadcast] failed to decrypt response from {ip}: {e}")
+
             except Exception as e:
-                print(f"The type of list is {type(peers)}")
                 print(f"[broadcast] failed to send to {ip}: {e}")
 
 
