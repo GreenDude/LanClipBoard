@@ -8,7 +8,7 @@ network:
   bootstrap_peers: []
 
 hotkeys:
-  paste: ["ctrl", "shift", "v"]
+  paste: ["Key.ctrl", "Key.shift", "v"]
 
 clipboard:
   poll_interval_ms: 200

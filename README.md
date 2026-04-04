@@ -33,6 +33,8 @@ TBC...
 
 ☢️ Wayland flickering
 
+☢️ Restarting after a handshake, results in discovery failure (as the device is already known by others)
+
 **Potential issues**
 
 ⚠️KDE not tested

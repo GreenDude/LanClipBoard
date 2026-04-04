@@ -41,7 +41,8 @@ def monitor_keyboard(stop_event: Event,
         k = normalize_key(key)
 
         pressed.add(k)
-        # print(pressed)
+        print(pressed)
+        print(paste_hotkey)
 
         if paste_hotkey <= pressed:
             # print("YAY (paste hotkey)")
