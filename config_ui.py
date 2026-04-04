@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
@@ -10,6 +11,10 @@ import subprocess
 import sys
 import security_services
 
+def get_default_paste_hotkey() -> list[str]:
+    if platform.system() == "Darwin":
+        return ["Key.cmd", "Key.shift", "v"]
+    return ["Key.ctrl", "Key.shift", "v"]
 
 DEFAULT_CONFIG = {
     "device": {
@@ -22,7 +27,7 @@ DEFAULT_CONFIG = {
         "bootstrap_peers": [],
     },
     "hotkeys": {
-        "paste": ["Key.cmd", "Key.shift", "v"],
+        "paste": get_default_paste_hotkey(),
     },
     "clipboard": {
         "poll_interval_ms": 200,
@@ -470,7 +475,10 @@ class MonocleConfigApp(tk.Tk):
             if initial:
                 self.status_var.set(f"Config not found, loaded defaults: {path}")
             else:
-                messagebox.showwarning("Config not found", f"Config not found:\n{path}\n\nLoaded defaults instead.")
+                messagebox.showwarning(
+                    "Config not found",
+                    f"Config not found:\n{path}\n\nLoaded defaults instead."
+                )
                 self.status_var.set(f"Config not found, loaded defaults: {path}")
             return
 
@@ -482,10 +490,8 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set("Load failed")
             return
 
-        merged = self._merge_with_defaults(data)
-        self._load_into_form(merged)
+        self._load_into_form(data)
         self.status_var.set(f"Loaded {path}")
-
     def _merge_with_defaults(self, data: dict) -> dict:
         merged = {
             "device": dict(DEFAULT_CONFIG["device"]),
@@ -504,23 +510,32 @@ class MonocleConfigApp(tk.Tk):
         return merged
 
     def _load_into_form(self, data: dict) -> None:
-        self.device_id_var.set(data["device"].get("id", "auto"))
-        self.device_name_var.set(data["device"].get("name", "auto"))
+        device = data.get("device", {})
+        network = data.get("network", {})
+        hotkeys = data.get("hotkeys", {})
+        clipboard = data.get("clipboard", {})
+        security = data.get("security", {})
+        peers = data.get("peers", {})
 
-        self.network_port_var.set(str(data["network"].get("port", 8000)))
-        self.network_discovery_var.set(bool(data["network"].get("discovery", True)))
-        self._set_bootstrap_peers(data["network"].get("bootstrap_peers", []))
+        self.device_id_var.set(device.get("id", "auto"))
+        self.device_name_var.set(device.get("name", "auto"))
+
+        self.network_port_var.set(str(network.get("port", 8000)))
+        self.network_discovery_var.set(bool(network.get("discovery", True)))
+        self._set_bootstrap_peers(network.get("bootstrap_peers", []))
 
         self.hotkey_paste_var.set(
-            ", ".join(data["hotkeys"].get("paste", ["Key.cmd", "Key.shift", "v"]))
+            ", ".join(hotkeys.get("paste", get_default_paste_hotkey()))
         )
-        self.clipboard_poll_ms_var.set(str(data["clipboard"].get("poll_interval_ms", 200)))
 
-        self.security_enabled_var.set(bool(data["security"].get("enabled", False)))
-        self.security_key_archive_var.set(data["security"].get("key_archive") or "")
-        self.security_key_password_var.set(data["security"].get("key_password") or "")
+        self.clipboard_poll_ms_var.set(str(clipboard.get("poll_interval_ms", 200)))
 
-        self.peers_auto_accept_var.set(bool(data["peers"].get("auto_accept", True)))
+        self.security_enabled_var.set(bool(security.get("enabled", False)))
+        self.security_key_archive_var.set(security.get("key_archive") or "")
+        self.security_key_password_var.set(security.get("key_password") or "")
+
+        self.peers_auto_accept_var.set(bool(peers.get("auto_accept", True)))
+
 
     def _collect_config(self) -> dict:
         try:

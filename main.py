@@ -22,18 +22,6 @@ from paste_queue_handler import paste_queue_handler
 import tempfile
 import security_services
 
-def load_config(path: str = "config/config.yaml") -> AppConfig:
-    config_path = Path(path)
-
-    if not config_path.exists():
-        raise RuntimeError(f"Config file not found: {config_path}")
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-
-    return AppConfig(**raw)
-
-
 def load_private_key_from_config(config):
     if not config.security.enabled:
         return None, None
