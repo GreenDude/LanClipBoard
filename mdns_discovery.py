@@ -167,15 +167,27 @@ class LanClipboardDiscovery:
             "supports_encryption": self.peer_public_key_pem is not None,
         }
 
+        #{
+        #   "device_id":"Windows@192.168.100.17",
+        #   "device_name":"DESKTOP-9I3INVQ",
+        #   "platform":"Windows",
+        #   "protocol_version":1,
+        #   "supports_text":true,
+        #   "supports_files":true,
+        #   "supports_encryption":false}
+
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 print(f"[discovery] attempting handshake with peer {ip}:{port}")
 
                 if self.peer_public_key_pem is not None:
+                    print(f"[discovery] encrypting payload for peer {ip}:{port}")
                     encrypted_jwt = security_services.encrypt(self.peer_public_key_pem, payload)
                     request_body = {"encrypted_jwt": encrypted_jwt}
+                    print(f"[discovery] sending encrypted payload to {ip}:{port}, \n\t{request_body}")
                     r = await client.post(url, json=request_body)
                 else:
+                    print(f"[discovery] sending un-encrypted payload to {ip}:{port}, \n\t{payload}")
                     r = await client.post(url, json=payload)
 
                 r.raise_for_status()

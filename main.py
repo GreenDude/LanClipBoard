@@ -4,6 +4,7 @@ from queue import Queue
 from threading import Event, Thread
 
 import yaml
+from Cryptodome.SelfTest.Protocol.test_ecdh import public_key
 from fastapi import FastAPI
 import os
 from pathlib import Path
@@ -50,13 +51,24 @@ def load_private_key_from_config(config):
             None,
         )
 
+        public_key_file = next(
+            (p for p in extracted_files if p.name.endswith("_public.pem") or p.name == "public_key.pem"),
+            None,
+        )
+
         if private_key_file is None:
             print("[security] private key not found in archive")
             return None, None
 
+        if public_key_file is None:
+            print("[security] public key not found in archive")
+            return None, None
+
         private_key_pem = private_key_file.read_bytes()
 
-        return private_key_pem, (password.encode("utf-8") if password else None)
+        public_key_pem = public_key_file.read_bytes()
+
+        return private_key_pem, public_key_pem, (password.encode("utf-8") if password else None)
 
     except Exception as e:
         print(f"[security] failed to load key archive: {e}")
@@ -89,8 +101,10 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.device_name = device_name
     app.state.paste_hotkey = build_hotkey_set(app.state.config.hotkeys.paste)
 
-    private_key_pem, private_key_password = load_private_key_from_config(app.state.config)
+    private_key_pem, public_key_pem, private_key_password = load_private_key_from_config(app.state.config)
+
     app.state.private_key_pem = private_key_pem
+    app.state.public_key_pem = public_key_pem
     app.state.private_key_password = private_key_password
 
     if private_key_pem is not None:
@@ -134,6 +148,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         port=port,
         protocol_version=1,
         peer_list=app.state.peer_list,
+        peer_public_key_pem=app.state.public_key_pem
     )
 
     print (f"app.state.config.network.discovery == {app.state.config.network.discovery}")

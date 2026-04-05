@@ -72,6 +72,7 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
         try:
             encrypted_payload = EncryptedPayload.model_validate_json(raw_body)
         except Exception as e:
+            print (f"FAILED TO DECRYPT {raw_body}")
             raise HTTPException(status_code=401, detail="Received unencrypted payload") from e
 
         try:
