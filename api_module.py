@@ -227,6 +227,7 @@ def build_rest_router():
         pq: Queue = Depends(get_paste_queue),
     ):
         raw_body = await request.body()
+        print(f"Received raw body: {raw_body}")
         entry_json = _try_decrypt_body(request, raw_body, ClipboardEntry)
         entry = ClipboardEntry.model_validate_json(entry_json)
 
@@ -288,22 +289,19 @@ def broadcast_to_peers(
     if peers is None:
         peers = ["localhost"]
 
-    headers = {}
-    if public_key_pem is not None:
-        headers["x-peer-public-key"] = public_key_pem.decode("utf-8")
-
     request_body = _try_encrypt_body(entry, public_key_pem)
 
     with httpx.Client(timeout=2) as client:
         for ip in peers:
             url = f"http://{ip}:{port}/api/clipboard_entry"
             try:
-                r = client.post(url, json=request_body, headers=headers)
+                r = client.post(url, json=request_body)
                 r.raise_for_status()
 
                 if private_key_pem is not None:
                     try:
                         response_json = r.json()
+                        print(f"Received a response from {ip} with body \n\t{response_json}")
                         if "encrypted_jwt" in response_json:
                             decrypted_response = security_services.decrypt(
                                 private_key=private_key_pem,
