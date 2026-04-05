@@ -1,26 +1,21 @@
+import json
+import platform
 import socket
+from pathlib import Path
 from queue import Queue
-from typing import List, Any
+from typing import Any, List, Type
 from urllib.parse import quote
 
 import aiofiles
 import httpx
-from fastapi import Request, APIRouter, responses
+from fastapi import APIRouter, HTTPException, Request, responses
 from fastapi.params import Depends
 from pydantic import BaseModel
-from pathlib import Path
-
 from starlette.responses import StreamingResponse
 
+import security_services
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 
-import platform
-
-from typing import Optional
-from fastapi import HTTPException
-import os
-
-import security_services
 
 class FileRequest(BaseModel):
     path: str
@@ -51,24 +46,45 @@ class HandshakeResponse(BaseModel):
     supports_files: bool
     supports_encryption: bool
 
-CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 class EncryptedPayload(BaseModel):
     encrypted_jwt: str
+
+
+CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 
 def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseModel]) -> str:
     """
     Returns a JSON string.
 
-    Accepts either:
-      1. plain JSON matching model_cls
-      2. {"encrypted_jwt": "..."} wrapper, which is decrypted into model_cls-compatible JSON
-
-    This keeps endpoint handlers simple:
-        body_json = _try_decrypt_body(request, raw_body, SomeModel)
-        body = SomeModel.model_validate_json(body_json)
+    Behavior:
+      - If security is enabled on this node, only encrypted payloads are accepted.
+      - If security is disabled, plain JSON is accepted.
+      - Encrypted payloads are decrypted into model_cls-compatible JSON.
     """
+    private_key = getattr(request.app.state, "private_key_pem", None)
+    private_key_password = getattr(request.app.state, "private_key_password", None)
+
+    security_enabled = private_key is not None
+
+    if security_enabled:
+        try:
+            encrypted_payload = EncryptedPayload.model_validate_json(raw_body)
+        except Exception as e:
+            raise HTTPException(status_code=401, detail="Received unencrypted payload") from e
+
+        try:
+            decrypted_dict = security_services.decrypt(
+                private_key=private_key,
+                encrypted_jwt=encrypted_payload.encrypted_jwt,
+                password=private_key_password,
+            )
+            model_cls.model_validate(decrypted_dict)
+            return json.dumps(decrypted_dict)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Failed to decrypt payload") from e
+
     try:
         model_cls.model_validate_json(raw_body)
         return raw_body.decode("utf-8")
@@ -79,9 +95,6 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
         encrypted_payload = EncryptedPayload.model_validate_json(raw_body)
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid request payload") from e
-
-    private_key = getattr(request.app.state, "private_key_pem", None)
-    private_key_password = getattr(request.app.state, "private_key_password", None)
 
     if private_key is None:
         raise HTTPException(status_code=400, detail="Encrypted payload not supported on this node")
@@ -125,14 +138,13 @@ def _try_encrypt_body(payload: Any, peer_public_key_pem: bytes | None) -> dict:
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Connect to an external address (doesn't need to be reachable)
-        s.connect(('8.8.8.8', 80))
-        IP = s.getsockname()[0]
+        s.connect(("8.8.8.8", 80))
+        ip_addr = s.getsockname()[0]
     except Exception:
-        IP = '127.0.0.1' # Fallback to loopback if no network connection
+        ip_addr = "127.0.0.1"
     finally:
         s.close()
-    return IP
+    return ip_addr
 
 
 def get_storage(request: Request) -> ClipboardStorage:
@@ -145,6 +157,10 @@ def get_paste_queue(request: Request) -> Queue:
 
 def build_rest_router():
     rest_router = APIRouter(prefix="/api", tags=["api"])
+
+    @rest_router.get("/")
+    async def get_root():
+        return responses.RedirectResponse("/docs")
 
     @rest_router.post("/handshake", response_model=HandshakeResponse)
     async def handshake(request: Request):
@@ -199,21 +215,16 @@ def build_rest_router():
             supports_encryption=request.app.state.private_key_pem is not None,
         )
 
-
     @rest_router.get("/peers")
-    async def get_peers(
-            request: Request,
-    ):
+    async def get_peers(request: Request):
         return request.app.state.peer_list
-
 
     @rest_router.post("/clipboard_entry")
     async def post_clipboard_entry(
-            request: Request,
-            cs: ClipboardStorage = Depends(get_storage),
-            pq: Queue = Depends(get_paste_queue),
+        request: Request,
+        cs: ClipboardStorage = Depends(get_storage),
+        pq: Queue = Depends(get_paste_queue),
     ):
-
         raw_body = await request.body()
         entry_json = _try_decrypt_body(request, raw_body, ClipboardEntry)
         entry = ClipboardEntry.model_validate_json(entry_json)
@@ -222,8 +233,12 @@ def build_rest_router():
         entry.origin = entry_origin
 
         if cs.store_clipboard_entry(entry_origin, entry, pq):
-            return {"host": request.client.host, "platform": entry.platform, "entry": entry.entry,
-                    "timestamp": entry.timestamp}
+            return {
+                "host": request.client.host,
+                "platform": entry.platform,
+                "entry": entry.entry,
+                "timestamp": entry.timestamp,
+            }
         else:
             return {
                 f"failed to process type: {entry.type}, entry: {entry.entry}, timestamp: {entry.timestamp}, platform: {entry.platform}"
@@ -236,7 +251,6 @@ def build_rest_router():
 
     @rest_router.get("/clipboard_entries/latest")
     async def get_clipboard_entry(cs: ClipboardStorage = Depends(get_storage)):
-
         return cs.get_latest_clipboard_entry() if cs.get_latest_clipboard_entry() else None
 
     @rest_router.post("/file")
@@ -255,7 +269,7 @@ def build_rest_router():
         return StreamingResponse(
             iter_file(),
             headers=headers,
-            media_type="application/octet-stream"
+            media_type="application/octet-stream",
         )
 
     return rest_router

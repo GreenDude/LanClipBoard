@@ -54,10 +54,6 @@ class LanClipboardDiscovery:
             ip_version=IPVersion.V4Only,
         )
 
-        self.aiozc = AsyncZeroconf(
-            ip_version=IPVersion.All,
-        )
-
         self.service_info = ServiceInfo(
             type_=self.SERVICE_TYPE,
             name=service_name,
