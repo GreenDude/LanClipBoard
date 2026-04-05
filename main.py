@@ -1,12 +1,9 @@
-import asyncio
 from contextlib import asynccontextmanager
 from queue import Queue
 from threading import Event, Thread
 
-import yaml
 from fastapi import FastAPI
 import os
-import json
 from pathlib import Path
 import platform
 import socket
@@ -20,18 +17,8 @@ from clipboard_storage import ClipboardStorage
 from keyboard_listener import monitor_keyboard
 from paste_queue_handler import paste_queue_handler
 
-
-def load_config(path: str = "config/config.yaml") -> AppConfig:
-    config_path = Path(path)
-
-    if not config_path.exists():
-        raise RuntimeError(f"Config file not found: {config_path}")
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-
-    return AppConfig(**raw)
-
+import tempfile
+import security_services
 
 def load_private_key_from_config(config):
     if not config.security.enabled:
@@ -49,21 +36,42 @@ def load_private_key_from_config(config):
         return None, None
 
     try:
-        with open(archive_file, "r", encoding="utf-8") as f:
-            archive_data = json.load(f)
+        temp_dir = Path(tempfile.mkdtemp(prefix="lanclipboard_keys_"))
+        extracted_files = security_services.unpack_keys(
+            archive_path=archive_file,
+            destination_dir=temp_dir,
+            archive_password=password.encode("utf-8") if password else None,
+        )
 
-        private_key_pem = archive_data.get("private_key_pem")
-        if not private_key_pem:
-            print("[security] private_key_pem missing from key archive")
+        private_key_file = next(
+            (p for p in extracted_files if p.name.endswith("_private.pem") or p.name == "private_key.pem"),
+            None,
+        )
+
+        public_key_file = next(
+            (p for p in extracted_files if p.name.endswith("_public.pem") or p.name == "public_key.pem"),
+            None,
+        )
+
+        if private_key_file is None:
+            print("[security] private key not found in archive")
             return None, None
 
-        return private_key_pem.encode("utf-8"), (
-            password.encode("utf-8") if password else None
-        )
+        if public_key_file is None:
+            print("[security] public key not found in archive")
+            return None, None
+
+        private_key_pem = private_key_file.read_bytes()
+
+        public_key_pem = public_key_file.read_bytes()
+
+        return private_key_pem, public_key_pem, (password.encode("utf-8") if password else None)
 
     except Exception as e:
         print(f"[security] failed to load key archive: {e}")
         return None, None
+
+
 
 def build_hotkey_set(keys: list[str]) -> set[str]:
     return set(keys)
@@ -90,8 +98,10 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.device_name = device_name
     app.state.paste_hotkey = build_hotkey_set(app.state.config.hotkeys.paste)
 
-    private_key_pem, private_key_password = load_private_key_from_config(app.state.config)
+    private_key_pem, public_key_pem, private_key_password = load_private_key_from_config(app.state.config)
+
     app.state.private_key_pem = private_key_pem
+    app.state.public_key_pem = public_key_pem
     app.state.private_key_password = private_key_password
 
     if private_key_pem is not None:
@@ -113,7 +123,10 @@ async def async_clipboard_lifespan(app: FastAPI):
               app.state.clipboard_storage,
               app.state.local_id, stop_event,
               app.state.peer_list,
-              app.state.config,
+              app.state.config.clipboard.poll_interval_ms,
+              app.state.public_key_pem,
+              app.state.private_key_pem,
+              app.state.private_key_password,
               ),
         daemon=True,
         name="clipboard_thread",
@@ -135,6 +148,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         port=port,
         protocol_version=1,
         peer_list=app.state.peer_list,
+        peer_public_key_pem=app.state.public_key_pem
     )
 
     print (f"app.state.config.network.discovery == {app.state.config.network.discovery}")

@@ -1,8 +1,14 @@
+import platform
+
 import yaml
 from pathlib import Path
-from pydantic import BaseModel
 from typing import Optional, List
+from pydantic import BaseModel, Field
 
+def default_paste_hotkey() -> list[str]:
+    if platform.system() == "Darwin":
+        return ["Key.cmd", "Key.shift", "v"]
+    return ["Key.ctrl", "Key.shift", "v"]
 
 class DeviceConfig(BaseModel):
     id: str
@@ -12,11 +18,11 @@ class DeviceConfig(BaseModel):
 class NetworkConfig(BaseModel):
     port: int
     discovery: bool
-    bootstrap_peers: list[str] = []
+    bootstrap_peers: list[str] = Field(default_factory=list)
 
 
 class HotkeyConfig(BaseModel):
-    paste: List[str]
+    paste: list[str] = Field(default_factory=default_paste_hotkey)
 
 
 class ClipboardConfig(BaseModel):

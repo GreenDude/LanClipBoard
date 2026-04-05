@@ -16,7 +16,10 @@ def monitor_clipboard(
         local_id: str,
         stop_event: Event,
         peer_list: list,
-        app_config: AppConfig
+        poll_interval: int,
+        public_key_pem,
+        private_key_pem,
+        password,
         ) -> None:
 
     last_fingerprint: tuple[str, str] | None = None  # (type, entry)
@@ -39,7 +42,11 @@ def monitor_clipboard(
                     )
                     clipboard_storage.store_clipboard_entry(local_id, entry)
                     print(f"Peer List type: {type(peer_list)} contain {peer_list}")
-                    broadcast_to_peers(entry, peer_list)
+                    broadcast_to_peers(entry=entry,
+                                       peers=peer_list,
+                                       public_key_pem = public_key_pem,
+                                       private_key_pem = private_key_pem,
+                                       private_key_password  = password)
 
         except Exception:
             print(f"Well that was unexpected {last_fingerprint}")
@@ -47,5 +54,5 @@ def monitor_clipboard(
             # Keep the thread alive; optionally log
             pass
 
-        sleep_time = app_config.clipboard.poll_interval_ms / 1000
+        sleep_time = poll_interval / 1000
         time.sleep(sleep_time)

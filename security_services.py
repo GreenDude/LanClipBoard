@@ -1,109 +1,129 @@
+from __future__ import annotations
+
 import json
-import platform
-from datetime import datetime, UTC
+from pathlib import Path
 from typing import cast, Any
 
 import pyzipper
-
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwcrypto import jwk, jwe
 
-import api_module
 
-
-#TODO: expand configurable key pair encryption/decryption
-def generate_key_pair(configured_exponent=65537,
-                         configured_key_size=4096,
-                         backend=default_backend(),
-                         encoding=serialization.Encoding.PEM,
-                         password: bytes = None,
-                         private_format=serialization.PrivateFormat.PKCS8,
-                         public_format=serialization.PublicFormat.SubjectPublicKeyInfo
-
-                         ):
+def generate_key_pair(
+    configured_exponent: int = 65537,
+    configured_key_size: int = 4096,
+    backend=default_backend(),
+    encoding=serialization.Encoding.PEM,
+    password: bytes | None = None,
+    private_format=serialization.PrivateFormat.PKCS8,
+    public_format=serialization.PublicFormat.SubjectPublicKeyInfo,
+) -> tuple[bytes, bytes]:
     private_key = rsa.generate_private_key(
         public_exponent=configured_exponent,
         key_size=configured_key_size,
-        backend=backend
+        backend=backend,
     )
 
     encoded_private_key = private_key.private_bytes(
         encoding=encoding,
         format=private_format,
-        encryption_algorithm= serialization.NoEncryption() if password is None else serialization.BestAvailableEncryption(password),
+        encryption_algorithm=(
+            serialization.NoEncryption()
+            if password is None
+            else serialization.BestAvailableEncryption(password)
+        ),
     )
 
     encoded_public_key = private_key.public_key().public_bytes(
         encoding=encoding,
-        format=public_format
+        format=public_format,
     )
 
     return encoded_private_key, encoded_public_key
 
 
-def package_keys(private_key: bytes, public_key: bytes, archive_password: bytes = None):
-    local_ip = api_module.get_local_ip()
-    arc_name = f"key_{platform.system()}_{local_ip}_{str(datetime.now(UTC))}.ska"
+def package_keys(
+    private_key: bytes,
+    public_key: bytes,
+    archive_path,
+    private_key_name: str = "private_key.pem",
+    public_key_name: str = "public_key.pem",
+    archive_password: bytes = None,
+):
+    archive_path = Path(archive_path)
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
 
-
-    with pyzipper.AESZipFile(arc_name,
-                             "w",
-                             compression=pyzipper.ZIP_DEFLATED,) as zf:
+    with pyzipper.AESZipFile(
+        archive_path,
+        "w",
+        compression=pyzipper.ZIP_DEFLATED,
+    ) as zf:
         if archive_password is not None:
             zf.setpassword(archive_password)
             zf.setencryption(pyzipper.WZ_AES, nbits=256)
-        zf.writestr("private_key.pem", private_key)
-        zf.writestr("public_key.pem", public_key)
 
-    return arc_name
+        zf.writestr(private_key_name, private_key)
+        zf.writestr(public_key_name, public_key)
 
+    return archive_path
 
-def unpack_keys(arc, archive_password: bytes = None):
-    with pyzipper.AESZipFile(arc) as zf:
-        zf.setpassword(archive_password)
-        zf.extractall(".")
+def unpack_keys(archive_path,
+                destination_dir=".",
+                archive_password: bytes = None):
+    archive_path = Path(archive_path)
+    destination_dir = Path(destination_dir)
+    destination_dir.mkdir(parents=True, exist_ok=True)
 
+    with pyzipper.AESZipFile(archive_path) as zf:
+        if archive_password is not None:
+            zf.setpassword(archive_password)
+        zf.extractall(destination_dir)
+        return [destination_dir / name for name in zf.namelist()]
 
-def check_key_pair(private_key_pem, public_key_pem, private_key_password=None):
-
+def check_key_pair(
+    private_key_pem: bytes,
+    public_key_pem: bytes,
+    private_key_password: bytes | None = None,
+) -> bool:
     try:
         private_key = serialization.load_pem_private_key(
             private_key_pem,
             password=private_key_password,
-            backend=default_backend()
+            backend=default_backend(),
         )
 
         derived_public_key = private_key.public_key()
 
         check_public_key = serialization.load_pem_public_key(
             public_key_pem,
-            backend=default_backend()
+            backend=default_backend(),
         )
 
         if isinstance(private_key, rsa.RSAPrivateKey) and isinstance(check_public_key, rsa.RSAPublicKey):
-            return derived_public_key.public_numbers().n == check_public_key.public_numbers().n and \
-                derived_public_key.public_numbers().e == check_public_key.public_numbers().e
+            return (
+                derived_public_key.public_numbers().n == check_public_key.public_numbers().n
+                and derived_public_key.public_numbers().e == check_public_key.public_numbers().e
+            )
 
         return derived_public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ) == public_key_pem
 
     except ValueError:
         return False
 
 
-def encrypt(public_key, json_text):
+def encrypt(public_key: bytes, json_text) -> str:
     public_jwk = jwk.JWK.from_pem(public_key)
-
     plaintext = json.dumps(json_text)
 
     protected_header = cast(Any, {
         "alg": "RSA-OAEP-256",
         "enc": "A256GCM",
-        "cty": "JWT"
+        "cty": "JWT",
     })
 
     token = jwe.JWE(
@@ -115,36 +135,14 @@ def encrypt(public_key, json_text):
     return token.serialize(compact=True)
 
 
-def decrypt(private_key: bytes, encrypted_jwt: str, password: bytes | None = None) -> dict:
+def decrypt(
+    private_key: bytes,
+    encrypted_jwt: str,
+    password: bytes | None = None,
+) -> dict:
     private_jwk = jwk.JWK.from_pem(private_key, password=password)
 
     token = jwe.JWE()
     token.deserialize(encrypted_jwt, key=private_jwk)
 
     return json.loads(token.payload.decode("utf-8"))
-
-
-if __name__ == "__main__":
-    pwd = b"P@$$WRD"
-    priv_key, pub_key = generate_key_pair(password=pwd)
-    keys_match = check_key_pair(priv_key, pub_key, pwd)
-    if keys_match:
-        print("The public and private keys match.")
-    else:
-        print("The public and private keys do not match.")
-
-    test_json = {
-        "sub": "user123",
-        "role": "admin",
-        "scope": ["clipboard:read", "clipboard:write"]
-    }
-
-    print("Encrypting...")
-    encrypted = encrypt(pub_key, json.dumps(test_json))
-    print(f"Got encrypted result: \n\t{encrypted}")
-    decrypted = decrypt(priv_key, encrypted, pwd)
-    print(f"Got decrypted result: \n\t{decrypted}")
-
-    arc_name = package_keys(priv_key, pub_key, pwd)
-    unpack_keys(arc_name, pwd)
-
