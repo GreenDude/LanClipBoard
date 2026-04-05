@@ -1,10 +1,7 @@
-import asyncio
 from contextlib import asynccontextmanager
 from queue import Queue
 from threading import Event, Thread
 
-import yaml
-from Cryptodome.SelfTest.Protocol.test_ecdh import public_key
 from fastapi import FastAPI
 import os
 from pathlib import Path
@@ -126,7 +123,10 @@ async def async_clipboard_lifespan(app: FastAPI):
               app.state.clipboard_storage,
               app.state.local_id, stop_event,
               app.state.peer_list,
-              app.state.config,
+              app.state.config.clipboard.poll_interval_ms,
+              app.state.public_key_pem,
+              app.state.private_key_pem,
+              app.state.private_key_password,
               ),
         daemon=True,
         name="clipboard_thread",

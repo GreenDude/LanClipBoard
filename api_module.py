@@ -279,20 +279,20 @@ def build_rest_router():
 def broadcast_to_peers(
     entry: ClipboardEntry,
     peers: list = None,
+    public_key_pem: bytes | None = None,
+    private_key_pem: bytes | None = None,
+    private_key_password: bytes | None = None,
     port: int = 8000,
-    peer_public_key_pem: bytes | None = None,
-    local_public_key_pem: bytes | None = None,
-    local_private_key_pem: bytes | None = None,
-    local_private_key_password: bytes | None = None,
+
 ) -> None:
     if peers is None:
         peers = ["localhost"]
 
     headers = {}
-    if local_public_key_pem is not None:
-        headers["x-peer-public-key"] = local_public_key_pem.decode("utf-8")
+    if public_key_pem is not None:
+        headers["x-peer-public-key"] = public_key_pem.decode("utf-8")
 
-    request_body = _try_encrypt_body(entry, peer_public_key_pem)
+    request_body = _try_encrypt_body(entry, public_key_pem)
 
     with httpx.Client(timeout=2) as client:
         for ip in peers:
@@ -301,14 +301,14 @@ def broadcast_to_peers(
                 r = client.post(url, json=request_body, headers=headers)
                 r.raise_for_status()
 
-                if local_private_key_pem is not None:
+                if private_key_pem is not None:
                     try:
                         response_json = r.json()
                         if "encrypted_jwt" in response_json:
                             decrypted_response = security_services.decrypt(
-                                private_key=local_private_key_pem,
+                                private_key=private_key_pem,
                                 encrypted_jwt=response_json["encrypted_jwt"],
-                                password=local_private_key_password,
+                                password=private_key_password,
                             )
                             print(f"[broadcast] decrypted response from {ip}: {decrypted_response}")
                     except Exception as e:
