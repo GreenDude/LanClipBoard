@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import cast, Any
+from typing import cast, Any, Iterable
 
 import pyzipper
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from jwcrypto import jwk, jwe
 
+from cryptography.fernet import Fernet
 
 def generate_key_pair(
     configured_exponent: int = 65537,
@@ -116,7 +117,7 @@ def check_key_pair(
         return False
 
 
-def encrypt(public_key: bytes, json_text) -> str:
+def encrypt_text(public_key: bytes, json_text) -> str:
     public_jwk = jwk.JWK.from_pem(public_key)
     plaintext = json.dumps(json_text)
 
@@ -135,7 +136,7 @@ def encrypt(public_key: bytes, json_text) -> str:
     return token.serialize(compact=True)
 
 
-def decrypt(
+def decrypt_text(
     private_key: bytes,
     encrypted_jwt: str,
     password: bytes | None = None,
@@ -146,3 +147,64 @@ def decrypt(
     token.deserialize(encrypted_jwt, key=private_jwk)
 
     return json.loads(token.payload.decode("utf-8"))
+
+
+def encrypt_file(public_key: rsa.RSAPublicKey, file_path: str) -> str | None:
+    # encrypts the file before sending
+
+    file_key = Fernet.generate_key()
+    fernet = Fernet(Fernet.generate_key())
+
+    with open("file_path", "rb") as f:
+        original_data = f.read()
+    encrypted_data = fernet.encrypt(original_data)
+
+    encrypted_file_key = public_key.encrypt(
+        file_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    file_path = Path(file_path)
+    encrypted_file_path = f"{file_path}.enc"
+    with open(encrypted_file_path, "wb") as f:
+        f.write(len(encrypted_file_key).to_bytes(4, 'big'))  # Store key length
+        f.write(encrypted_file_key)
+        f.write(encrypted_data)
+
+    if Path(encrypted_file_path).exists():
+        return encrypted_file_path
+    else:
+        return None
+
+
+def decrypt_file(private_key: rsa.RSAPrivateKey, encrypted_file_path: str) -> str | None:
+    with open(encrypted_file_path, "rb") as f:
+        key_length = int.from_bytes(f.read(4), 'big')
+        encrypted_file_key = f.read(key_length)
+        encrypted_data = f.read()
+
+    file_key = private_key.decrypt(
+        encrypted_file_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    fernet = Fernet(file_key)
+    decrypted_data = fernet.decrypt(encrypted_data)
+
+    decrypted_file_path = encrypted_file_path.removesuffix(".enc")
+
+    with open(decrypted_file_path, "wb") as f:
+        f.write(decrypted_data)
+
+    if Path(decrypted_file_path).exists():
+        return decrypted_file_path
+    else:
+        return None

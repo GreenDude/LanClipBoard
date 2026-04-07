@@ -76,7 +76,7 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
             raise HTTPException(status_code=401, detail="Received unencrypted payload") from e
 
         try:
-            decrypted_dict = security_services.decrypt(
+            decrypted_dict = security_services.decrypt_text(
                 private_key=private_key,
                 encrypted_jwt=encrypted_payload.encrypted_jwt,
                 password=private_key_password,
@@ -101,7 +101,7 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
         raise HTTPException(status_code=400, detail="Encrypted payload not supported on this node")
 
     try:
-        decrypted_dict = security_services.decrypt(
+        decrypted_dict = security_services.decrypt_text(
             private_key=private_key,
             encrypted_jwt=encrypted_payload.encrypted_jwt,
             password=private_key_password,
@@ -132,7 +132,7 @@ def _try_encrypt_body(payload: Any, peer_public_key_pem: bytes | None) -> dict:
     if peer_public_key_pem is None:
         return payload_dict
 
-    encrypted_jwt = security_services.encrypt(peer_public_key_pem, payload_dict)
+    encrypted_jwt = security_services.encrypt_text(peer_public_key_pem, payload_dict)
     return {"encrypted_jwt": encrypted_jwt}
 
 
@@ -303,7 +303,7 @@ def broadcast_to_peers(
                         response_json = r.json()
                         print(f"Received a response from {ip} with body \n\t{response_json}")
                         if "encrypted_jwt" in response_json:
-                            decrypted_response = security_services.decrypt(
+                            decrypted_response = security_services.decrypt_text(
                                 private_key=private_key_pem,
                                 encrypted_jwt=response_json["encrypted_jwt"],
                                 password=private_key_password,
