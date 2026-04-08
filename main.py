@@ -21,19 +21,22 @@ import tempfile
 import security_services
 
 def load_private_key_from_config(config):
+    none_key = None, None, None
+
     if not config.security.enabled:
-        return None, None
+        return none_key
 
     archive_path = config.security.key_archive
     password = config.security.key_password
 
     if not archive_path:
-        return None, None
+        return none_key
 
+    print (archive_path)
     archive_file = Path(archive_path)
     if not archive_file.exists():
         print(f"[security] key archive not found: {archive_file}")
-        return None, None
+        return none_key
 
     try:
         temp_dir = Path(tempfile.mkdtemp(prefix="lanclipboard_keys_"))
@@ -55,21 +58,23 @@ def load_private_key_from_config(config):
 
         if private_key_file is None:
             print("[security] private key not found in archive")
-            return None, None
+            return None, None, None
 
         if public_key_file is None:
             print("[security] public key not found in archive")
-            return None, None
+            return None, None, None
 
         private_key_pem = private_key_file.read_bytes()
 
         public_key_pem = public_key_file.read_bytes()
 
-        return private_key_pem, public_key_pem, (password.encode("utf-8") if password else None)
+        pwd = (password.encode("utf-8") if password else None)
+
+        return private_key_pem, public_key_pem, pwd
 
     except Exception as e:
         print(f"[security] failed to load key archive: {e}")
-        return None, None
+        return None, None, None
 
 
 
@@ -98,6 +103,8 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.device_name = device_name
     app.state.paste_hotkey = build_hotkey_set(app.state.config.hotkeys.paste)
 
+    the_hell = load_private_key_from_config(app.state.config)
+    print(the_hell)
     private_key_pem, public_key_pem, private_key_password = load_private_key_from_config(app.state.config)
 
     app.state.private_key_pem = private_key_pem
@@ -134,7 +141,13 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     queue_handler_thread = Thread(
         target=paste_queue_handler,
-        args=(stop_event, app.state.paste_queue, app.state.clipboard,),
+        args=(
+            stop_event,
+            app.state.paste_queue,
+            app.state.clipboard,
+            app.state.private_key_pem,
+            app.state.public_key_pem
+        ),
         daemon=True,
         name="queue_handler_thread",
     )

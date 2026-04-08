@@ -8,6 +8,8 @@ from urllib.parse import quote
 
 import aiofiles
 import httpx
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey, RSAPrivateKey
 from fastapi import APIRouter, HTTPException, Request, responses
 from fastapi.params import Depends
 from pydantic import BaseModel
@@ -73,7 +75,7 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
             encrypted_payload = EncryptedPayload.model_validate_json(raw_body)
         except Exception as e:
             print (f"FAILED TO DECRYPT {raw_body}")
-            raise HTTPException(status_code=401, detail="Received unencrypted payload") from e
+            raise HTTPException(status_code=401, detail="Received unencrypted payload")
 
         try:
             decrypted_dict = security_services.decrypt_text(
@@ -155,6 +157,14 @@ def get_storage(request: Request) -> ClipboardStorage:
 def get_paste_queue(request: Request) -> Queue:
     return request.app.state.paste_queue
 
+def get_public_key(request: Request):
+    return request.app.state.public_key_pem
+
+def get_private_key(request: Request):
+    return request.app.state.private_key_pem
+
+def get_known_peers(request: Request):
+    return request.app.state.peer_list
 
 def build_rest_router():
     rest_router = APIRouter(prefix="/api", tags=["api"])
@@ -225,7 +235,11 @@ def build_rest_router():
         request: Request,
         cs: ClipboardStorage = Depends(get_storage),
         pq: Queue = Depends(get_paste_queue),
+        known_peers: list[str] = Depends(get_known_peers),
     ):
+        if request.client.host not in known_peers:
+            raise HTTPException(status_code=401, detail="Received unencrypted payload")
+
         raw_body = await request.body()
         print(f"Received raw body: {raw_body}")
         entry_json = _try_decrypt_body(request, raw_body, ClipboardEntry)
@@ -256,8 +270,28 @@ def build_rest_router():
         return cs.get_latest_clipboard_entry() if cs.get_latest_clipboard_entry() else None
 
     @rest_router.post("/file")
-    async def get_file(file_request: FileRequest):
-        file_path = Path(file_request.path)
+    async def get_file(
+            request: Request,
+            public_key: RSAPublicKey = Depends(get_public_key),
+            known_peers: list[str] = Depends(get_known_peers)
+            ):
+
+        if (request.client.host not in known_peers):
+            raise HTTPException(status_code=403, detail="Unauthorized peer")
+
+        raw_body = await request.body()
+        req_json = _try_decrypt_body(request, raw_body, FileRequest)
+        file_request = FileRequest.model_validate_json(req_json)
+        base_file_path = Path(file_request.path)
+
+        if public_key is None:
+            file_path = base_file_path
+        else:
+            # encrypt the file first and return the encrypted file path
+            if security_services.encrypt_file(public_key, base_file_path) is not None:
+                file_path = base_file_path
+            else:
+                raise ValueError("Failed to encrypt file with provided public key")
 
         async def iter_file():
             async with aiofiles.open(file_path, "rb") as f:
@@ -316,7 +350,7 @@ def broadcast_to_peers(
                 print(f"[broadcast] failed to send to {ip}: {e}")
 
 
-def get_files(paths: List[str], ip: str, port: int = 8000):
+def get_files(paths: List[str], ip: str, public_key: RSAPublicKey, private_key: RSAPrivateKey, port: int = 8000):
     import tempfile
 
     timeout = httpx.Timeout(connect=5, read=60, write=30, pool=5)
@@ -333,7 +367,15 @@ def get_files(paths: List[str], ip: str, port: int = 8000):
                 file_path = Path(str_path)
                 file_name = file_path.name
                 json_body = FileRequest(path=str_path)
-                payload = json_body.model_dump(mode="json")
+
+                if public_key is None:
+                    payload = json_body.model_dump(mode="json")
+                else:
+                    payload = _try_encrypt_body(json_body.model_dump(mode="json"),
+                                            public_key.public_bytes(
+                                                serialization.Encoding.PEM,
+                                                serialization.PublicFormat.SubjectPublicKeyInfo
+                                            ))
 
                 with client.stream("POST", url, json=payload) as r:
                     r.raise_for_status()
@@ -349,7 +391,12 @@ def get_files(paths: List[str], ip: str, port: int = 8000):
                             f.write(chunk)
 
                     print(f"File {file_name} saved")
-                    downloaded_paths.append(str(temp_file))
+                    if public_key is None:
+                        downloaded_paths.append(str(temp_file))
+                    else:
+                        decrypted_file_path = security_services.decrypt_file(private_key, str(temp_file))
+                        temp_file.unlink(missing_ok=True)
+                        downloaded_paths.append(decrypted_file_path)
 
         except Exception as e:
             print(f"[file request] failed to receive from {ip}: {e}")

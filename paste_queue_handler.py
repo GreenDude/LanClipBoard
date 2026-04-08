@@ -1,12 +1,17 @@
 import ast
 from queue import Queue, Empty
+from cryptography.hazmat.primitives.asymmetric import rsa
 
-import api_module
 from abstract_clipboard import AbstractClipboard
 from clipboard_storage import ClipboardEntry
+import api_module
 
 
-def paste_queue_handler(stop_event, paste_queue: Queue, clipboard_implementation: AbstractClipboard):
+def paste_queue_handler(stop_event,
+                        paste_queue: Queue,
+                        clipboard_implementation: AbstractClipboard,
+                        private_key: rsa.RSAPrivateKey,
+                        public_key: rsa.RSAPublicKey):
     while not stop_event.is_set():
         try:
             queued_entry: ClipboardEntry = paste_queue.get(timeout=0.2)
@@ -27,7 +32,9 @@ def paste_queue_handler(stop_event, paste_queue: Queue, clipboard_implementation
                 ip_str = queued_entry.origin if queued_entry.origin != "local" else "localhost"
                 downloaded_paths = api_module.get_files(
                     [p for p in ast.literal_eval(queued_entry.entry)],
-                    ip_str
+                    ip_str,
+                    public_key,
+                    private_key
                 )
                 if downloaded_paths:
                     clipboard_implementation.paste_clipboard_entry(downloaded_paths)

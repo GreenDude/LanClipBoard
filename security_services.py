@@ -149,13 +149,13 @@ def decrypt_text(
     return json.loads(token.payload.decode("utf-8"))
 
 
-def encrypt_file(public_key: rsa.RSAPublicKey, file_path: str) -> str | None:
+def encrypt_file(public_key: rsa.RSAPublicKey, file_path: Path) -> str | None:
     # encrypts the file before sending
 
     file_key = Fernet.generate_key()
     fernet = Fernet(Fernet.generate_key())
 
-    with open("file_path", "rb") as f:
+    with open(file_path, "rb") as f:
         original_data = f.read()
     encrypted_data = fernet.encrypt(original_data)
 
