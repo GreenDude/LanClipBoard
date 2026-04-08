@@ -10,8 +10,9 @@ import api_module
 def paste_queue_handler(stop_event,
                         paste_queue: Queue,
                         clipboard_implementation: AbstractClipboard,
-                        private_key: rsa.RSAPrivateKey,
-                        public_key: rsa.RSAPublicKey):
+                        private_key: bytes,
+                        public_key: bytes,
+                        key_pass: bytes):
     while not stop_event.is_set():
         try:
             queued_entry: ClipboardEntry = paste_queue.get(timeout=0.2)
@@ -34,7 +35,8 @@ def paste_queue_handler(stop_event,
                     [p for p in ast.literal_eval(queued_entry.entry)],
                     ip_str,
                     public_key,
-                    private_key
+                    private_key,
+                    key_pass
                 )
                 if downloaded_paths:
                     clipboard_implementation.paste_clipboard_entry(downloaded_paths)
@@ -43,7 +45,7 @@ def paste_queue_handler(stop_event,
                 print("The entry type is not supported")
                 raise NotImplementedError(f"Unsupported clipboard entry type: {queued_entry.type}")
         except Exception as e:
-            # Keep queue handler alive even if one paste attempt fails.
+            # Keep the queue handler alive even if one paste attempt fails.
             print(f"[paste queue] failed to process entry: {e}")
         finally:
             paste_queue.task_done()

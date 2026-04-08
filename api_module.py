@@ -288,8 +288,9 @@ def build_rest_router():
             file_path = base_file_path
         else:
             # encrypt the file first and return the encrypted file path
-            if security_services.encrypt_file(public_key, base_file_path) is not None:
-                file_path = base_file_path
+            encrypted_file_path = security_services.encrypt_file(public_key, base_file_path)
+            if encrypted_file_path is not None:
+                file_path = encrypted_file_path
             else:
                 raise ValueError("Failed to encrypt file with provided public key")
 
@@ -350,7 +351,7 @@ def broadcast_to_peers(
                 print(f"[broadcast] failed to send to {ip}: {e}")
 
 
-def get_files(paths: List[str], ip: str, public_key: RSAPublicKey, private_key: RSAPrivateKey, port: int = 8000):
+def get_files(paths: List[str], ip: str, public_key: bytes, private_key: bytes, key_pass: bytes, port: int = 8000):
     import tempfile
 
     timeout = httpx.Timeout(connect=5, read=60, write=30, pool=5)
@@ -372,11 +373,8 @@ def get_files(paths: List[str], ip: str, public_key: RSAPublicKey, private_key: 
                     payload = json_body.model_dump(mode="json")
                 else:
                     payload = _try_encrypt_body(json_body.model_dump(mode="json"),
-                                            public_key.public_bytes(
-                                                serialization.Encoding.PEM,
-                                                serialization.PublicFormat.SubjectPublicKeyInfo
-                                            ))
-
+                                            public_key)
+                print(f"Requesting \n\t{json_body}\n\n{payload}\n\n\n")
                 with client.stream("POST", url, json=payload) as r:
                     r.raise_for_status()
 
@@ -391,13 +389,13 @@ def get_files(paths: List[str], ip: str, public_key: RSAPublicKey, private_key: 
                             f.write(chunk)
 
                     print(f"File {file_name} saved")
-                    if public_key is None:
-                        downloaded_paths.append(str(temp_file))
-                    else:
-                        decrypted_file_path = security_services.decrypt_file(private_key, str(temp_file))
-                        temp_file.unlink(missing_ok=True)
-                        downloaded_paths.append(decrypted_file_path)
-
+                    # if public_key is None:
+                    #     downloaded_paths.append(str(temp_file))
+                    # else:
+                    #     decrypted_file_path = security_services.decrypt_file(private_key, key_pass, str(temp_file))
+                    #     temp_file.unlink(missing_ok=True)
+                    #     downloaded_paths.append(decrypted_file_path)
+                    downloaded_paths.append(str(temp_file))
         except Exception as e:
             print(f"[file request] failed to receive from {ip}: {e}")
 

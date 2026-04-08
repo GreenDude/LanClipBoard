@@ -149,7 +149,7 @@ def decrypt_text(
     return json.loads(token.payload.decode("utf-8"))
 
 
-def encrypt_file(public_key: rsa.RSAPublicKey, file_path: Path) -> str | None:
+def encrypt_file(public_key: bytes, file_path: Path) -> str | None:
     # encrypts the file before sending
 
     file_key = Fernet.generate_key()
@@ -159,9 +159,10 @@ def encrypt_file(public_key: rsa.RSAPublicKey, file_path: Path) -> str | None:
         original_data = f.read()
     encrypted_data = fernet.encrypt(original_data)
 
-    encrypted_file_key = public_key.encrypt(
+    rsa_public_key: rsa.RSAPublicKey = serialization.load_pem_public_key(public_key)
+    encrypted_file_key = rsa_public_key.encrypt(
         file_key,
-        padding.OAEP(
+      padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
             label=None
@@ -181,13 +182,15 @@ def encrypt_file(public_key: rsa.RSAPublicKey, file_path: Path) -> str | None:
         return None
 
 
-def decrypt_file(private_key: rsa.RSAPrivateKey, encrypted_file_path: str) -> str | None:
+def decrypt_file(private_key: bytes, key_pass: bytes, encrypted_file_path: str) -> str | None:
     with open(encrypted_file_path, "rb") as f:
+        print(f"Attempting to decrypt: {encrypted_file_path}")
         key_length = int.from_bytes(f.read(4), 'big')
         encrypted_file_key = f.read(key_length)
         encrypted_data = f.read()
 
-    file_key = private_key.decrypt(
+    rsa_private_key: rsa.RSAPrivateKey = serialization.load_pem_private_key(private_key, key_pass)
+    file_key = rsa_private_key.decrypt(
         encrypted_file_key,
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),

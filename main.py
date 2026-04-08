@@ -146,7 +146,8 @@ async def async_clipboard_lifespan(app: FastAPI):
             app.state.paste_queue,
             app.state.clipboard,
             app.state.private_key_pem,
-            app.state.public_key_pem
+            app.state.public_key_pem,
+            app.state.private_key_password,
         ),
         daemon=True,
         name="queue_handler_thread",
