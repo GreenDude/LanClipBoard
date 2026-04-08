@@ -35,28 +35,27 @@ def monitor_keyboard(stop_event: Event,
                      paste_hotkey: set[str]
                      ) -> None:
     pressed = set()
+    combo_active = False
 
     def on_press(key):
-        nonlocal is_pasting
+        nonlocal combo_active
         k = normalize_key(key)
 
         pressed.add(k)
         print(pressed)
         print(paste_hotkey)
 
-        if paste_hotkey <= pressed:
-            # print("YAY (paste hotkey)")
-            if not is_pasting:
-                paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
-                is_pasting= True
+        if paste_hotkey <= pressed and not combo_active:
+            paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
+            combo_active = True
             print(paste_queue.qsize())
 
     def on_release(key):
-        nonlocal is_pasting
+        nonlocal combo_active
         k = normalize_key(key)
         pressed.discard(k)
-        if k in paste_hotkey:
-            is_pasting = False
+        if not (paste_hotkey <= pressed):
+            combo_active = False
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()

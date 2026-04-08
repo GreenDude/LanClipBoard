@@ -58,10 +58,15 @@ class WindowsClipboard(AbstractClipboard):
                 clipboard_updated = True
 
             elif isinstance(entry, list):
-                paths = [os.path.normpath(p) for p in entry]
-                drop_files = "\0".join(paths) + "\0\0"
-                win32clipboard.SetClipboardData(win32con.CF_HDROP, drop_files)
-                clipboard_updated = True
+                paths = [os.path.normpath(p) for p in entry if p]
+                if not paths:
+                    print("No valid file paths to paste")
+                    clipboard_updated = False
+                else:
+                    # pywin32 expects a sequence of file paths for CF_HDROP.
+                    # Passing a NUL-delimited string can break paste targets and freeze Explorer.
+                    win32clipboard.SetClipboardData(win32con.CF_HDROP, tuple(paths))
+                    clipboard_updated = True
 
             else:
                 print(f"Unsupported entry type: {type(entry)}")
