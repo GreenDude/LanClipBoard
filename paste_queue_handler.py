@@ -42,5 +42,8 @@ def paste_queue_handler(stop_event,
             else:
                 print("The entry type is not supported")
                 raise NotImplementedError(f"Unsupported clipboard entry type: {queued_entry.type}")
+        except Exception as e:
+            # Keep queue handler alive even if one paste attempt fails.
+            print(f"[paste queue] failed to process entry: {e}")
         finally:
             paste_queue.task_done()

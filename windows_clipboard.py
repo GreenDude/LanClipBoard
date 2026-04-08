@@ -1,5 +1,6 @@
 import time
 import os
+import struct
 from pathlib import Path
 
 import win32clipboard
@@ -63,9 +64,12 @@ class WindowsClipboard(AbstractClipboard):
                     print("No valid file paths to paste")
                     clipboard_updated = False
                 else:
-                    # pywin32 expects a sequence of file paths for CF_HDROP.
-                    # Passing a NUL-delimited string can break paste targets and freeze Explorer.
-                    win32clipboard.SetClipboardData(win32con.CF_HDROP, tuple(paths))
+                    # CF_HDROP expects a DROPFILES struct followed by a UTF-16LE
+                    # double-NUL-terminated file list.
+                    file_list = "\0".join(paths) + "\0\0"
+                    dropfiles_header = struct.pack("IiiII", 20, 0, 0, 0, 1)
+                    dropfiles_payload = dropfiles_header + file_list.encode("utf-16le")
+                    win32clipboard.SetClipboardData(win32con.CF_HDROP, dropfiles_payload)
                     clipboard_updated = True
 
             else:
