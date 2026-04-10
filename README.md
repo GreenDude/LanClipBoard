@@ -43,17 +43,17 @@ This tool provides a simple and secure way to share your clipboard across multip
 
 ✅ Request and Response Body Security
 
-☑️ Secure file transfer
+✅ Secure file transfer
 
 ✅ Available devices discovery (via secure handshake?)
 
 **Known issues**
 
-☢️ Windows CTRL + Shift + V can cause double paste
-
 ☢️ Wayland flickering
 
 ☢️ Restarting after a handshake results in discovery failure (as the device is already known by others)
+
+☢️ Windows File transfer saves the file in `AddData/Local/Temp/LanClipboard`
 
 **Potential issues**
 

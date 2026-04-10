@@ -1,5 +1,6 @@
 import time
 import os
+import struct
 from pathlib import Path
 
 import win32clipboard
@@ -58,10 +59,18 @@ class WindowsClipboard(AbstractClipboard):
                 clipboard_updated = True
 
             elif isinstance(entry, list):
-                paths = [os.path.normpath(p) for p in entry]
-                drop_files = "\0".join(paths) + "\0\0"
-                win32clipboard.SetClipboardData(win32con.CF_HDROP, drop_files)
-                clipboard_updated = True
+                paths = [os.path.normpath(p) for p in entry if p]
+                if not paths:
+                    print("No valid file paths to paste")
+                    clipboard_updated = False
+                else:
+                    # CF_HDROP expects a DROPFILES struct followed by a UTF-16LE
+                    # double-NUL-terminated file list.
+                    file_list = "\0".join(paths) + "\0\0"
+                    dropfiles_header = struct.pack("IiiII", 20, 0, 0, 0, 1)
+                    dropfiles_payload = dropfiles_header + file_list.encode("utf-16le")
+                    win32clipboard.SetClipboardData(win32con.CF_HDROP, dropfiles_payload)
+                    clipboard_updated = True
 
             else:
                 print(f"Unsupported entry type: {type(entry)}")

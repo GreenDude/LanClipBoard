@@ -182,7 +182,7 @@ class LanClipboardDiscovery:
 
                 if self.peer_public_key_pem is not None:
                     print(f"[discovery] encrypting payload for peer {ip}:{port}")
-                    encrypted_jwt = security_services.encrypt(self.peer_public_key_pem, payload)
+                    encrypted_jwt = security_services.encrypt_text(self.peer_public_key_pem, payload)
                     request_body = {"encrypted_jwt": encrypted_jwt}
                     print(f"[discovery] sending encrypted payload to {ip}:{port}, \n\t{request_body}")
                     r = await client.post(url, json=request_body)
