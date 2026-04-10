@@ -1,3 +1,5 @@
+"""macOS clipboard via PyObjC ``NSPasteboard``."""
+
 import AppKit
 from Foundation import NSURL
 from abstract_clipboard import AbstractClipboard
@@ -9,12 +11,14 @@ TEXT_TYPES = [
 ]
 
 class MacClipboard(AbstractClipboard):
+    """Read/write text and file URLs from the general pasteboard."""
 
     def __init__(self):
+        """Attach a pynput keyboard controller used to synthesize Cmd+V after updating the pasteboard."""
         self.keyboard_controller = keyboard.Controller()
 
-
     def get_clipboard_entry(self):
+        """Prefer file URLs, otherwise return the first UTF-8/plain string."""
         pb = AppKit.NSPasteboard.generalPasteboard()
 
         urls = pb.readObjectsForClasses_options_([NSURL], None)
@@ -33,6 +37,7 @@ class MacClipboard(AbstractClipboard):
 
 
     def paste_clipboard_entry(self, entry):
+        """Write *entry* to the pasteboard and simulate Cmd+V."""
         pb = AppKit.NSPasteboard.generalPasteboard()
 
         print(f"Attempting to paste {entry}, which is a {type(entry)}")

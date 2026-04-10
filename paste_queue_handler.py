@@ -1,18 +1,25 @@
+"""Background worker: consume :class:`ClipboardEntry` objects from a queue and paste locally."""
+
 import ast
-from queue import Queue, Empty
-from cryptography.hazmat.primitives.asymmetric import rsa
+from queue import Empty, Queue
 
 from abstract_clipboard import AbstractClipboard
-from clipboard_storage import ClipboardEntry
 import api_module
+from clipboard_storage import ClipboardEntry
 
 
-def paste_queue_handler(stop_event,
-                        paste_queue: Queue,
-                        clipboard_implementation: AbstractClipboard,
-                        private_key: bytes,
-                        public_key: bytes,
-                        key_pass: bytes):
+def paste_queue_handler(
+    stop_event,
+    paste_queue: Queue,
+    clipboard_implementation: AbstractClipboard,
+    private_key: bytes,
+    public_key: bytes,
+    key_pass: bytes,
+):
+    """Apply queued clipboard entries (text or file lists) using *clipboard_implementation*.
+
+    File entries fetch from the origin host via :func:`api_module.get_files`.
+    """
     while not stop_event.is_set():
         try:
             queued_entry: ClipboardEntry = paste_queue.get(timeout=0.2)

@@ -1,14 +1,17 @@
+"""FastAPI entrypoint: wires config, discovery, clipboard threads, and REST API."""
+
 from contextlib import asynccontextmanager
+import os
+import shutil
+from pathlib import Path
+import platform
+import socket
 from queue import Queue
 from threading import Event, Thread
 
 from fastapi import FastAPI
-import os
-from pathlib import Path
-import platform
-import socket
 
-from config.config_loader import AppConfig, load_config
+from config.config_loader import load_config
 from mdns_discovery import LanClipboardDiscovery
 from clipboard_factory import get_clipboard
 from api_module import build_rest_router, get_local_ip
@@ -20,7 +23,12 @@ from paste_queue_handler import paste_queue_handler
 import tempfile
 import security_services
 
+
 def load_private_key_from_config(config):
+    """Load PEM keys from the configured archive, or return three ``None`` values if disabled or on error.
+
+    Extracts into a temporary directory, reads key material into memory, then deletes the directory.
+    """
     none_key = None, None, None
 
     if not config.security.enabled:
@@ -32,12 +40,12 @@ def load_private_key_from_config(config):
     if not archive_path:
         return none_key
 
-    print (archive_path)
     archive_file = Path(archive_path)
     if not archive_file.exists():
         print(f"[security] key archive not found: {archive_file}")
         return none_key
 
+    temp_dir: Path | None = None
     try:
         temp_dir = Path(tempfile.mkdtemp(prefix="lanclipboard_keys_"))
         extracted_files = security_services.unpack_keys(
@@ -65,26 +73,29 @@ def load_private_key_from_config(config):
             return None, None, None
 
         private_key_pem = private_key_file.read_bytes()
-
         public_key_pem = public_key_file.read_bytes()
-
-        pwd = (password.encode("utf-8") if password else None)
+        pwd = password.encode("utf-8") if password else None
 
         return private_key_pem, public_key_pem, pwd
 
     except Exception as e:
         print(f"[security] failed to load key archive: {e}")
         return None, None, None
+    finally:
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 
 def build_hotkey_set(keys: list[str]) -> set[str]:
+    """Normalize configured hotkey tokens into a set for combo matching."""
     return set(keys)
 
 
 
 @asynccontextmanager
 async def async_clipboard_lifespan(app: FastAPI):
+    """Start background threads, discovery, and shared app state; tear down on shutdown."""
     app.state.config = load_config()
 
     port = app.state.config.network.port
@@ -103,8 +114,6 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.device_name = device_name
     app.state.paste_hotkey = build_hotkey_set(app.state.config.hotkeys.paste)
 
-    the_hell = load_private_key_from_config(app.state.config)
-    print(the_hell)
     private_key_pem, public_key_pem, private_key_password = load_private_key_from_config(app.state.config)
 
     app.state.private_key_pem = private_key_pem
@@ -117,7 +126,6 @@ async def async_clipboard_lifespan(app: FastAPI):
         print("[security] running without private key")
 
     app.state.paste_queue = Queue()
-    app.state.is_pasting = False
 
     stop_event = Event()
     app.state.stop_event = stop_event
@@ -165,7 +173,6 @@ async def async_clipboard_lifespan(app: FastAPI):
         peer_public_key_pem=app.state.public_key_pem
     )
 
-    print (f"app.state.config.network.discovery == {app.state.config.network.discovery}")
     if app.state.config.network.discovery:
         await discovery_service.start()
     app.state.discovery_service = discovery_service
@@ -191,7 +198,6 @@ async def async_clipboard_lifespan(app: FastAPI):
                 stop_event,
                 app.state.paste_queue,
                 app.state.clipboard_storage,
-                app.state.is_pasting,
                 app.state.paste_hotkey,
             ),
             daemon=True,

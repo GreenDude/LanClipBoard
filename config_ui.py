@@ -1,3 +1,5 @@
+"""Tkinter configuration UI for LanClipBoard (device, network, keys, and local uvicorn)."""
+
 from __future__ import annotations
 
 import platform
@@ -12,6 +14,7 @@ import sys
 import security_services
 
 def get_default_paste_hotkey() -> list[str]:
+    """Default paste chord: Cmd+Shift+V on macOS, Ctrl+Shift+V elsewhere."""
     if platform.system() == "Darwin":
         return ["Key.cmd", "Key.shift", "v"]
     return ["Key.ctrl", "Key.shift", "v"]
@@ -44,7 +47,10 @@ DEFAULT_CONFIG = {
 
 
 class MonocleConfigApp(tk.Tk):
+    """Edit ``config.yaml``, manage RSA archives, and optionally spawn ``uvicorn`` as a child process."""
+
     def __init__(self, config_path: str = "config/config.yaml") -> None:
+        """Lay out tabs, bind close cleanup, and load *config_path* when it exists."""
         super().__init__()
         self.title("Monocle Configurator")
         self.geometry("760x720")
@@ -79,13 +85,16 @@ class MonocleConfigApp(tk.Tk):
         self.load_from_path(initial=True)
 
     def _get_config_dir(self) -> Path:
+        """Directory containing the active YAML file."""
         return Path(self.config_path_var.get()).resolve().parent
 
     def _sanitize_key_name(self, key_name: str) -> str:
+        """Reduce a user-provided key label to safe filename characters."""
         sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", key_name.strip())
         return sanitized.strip("._")
 
     def generate_new_key(self) -> None:
+        """Create RSA PEM files and a passworded ``.ska`` archive beside the config directory."""
         key_name = self._sanitize_key_name(self.generate_key_name_var.get())
         key_password = self.generate_key_password_var.get()
 
@@ -135,6 +144,7 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set("Key generation failed")
 
     def import_key_archive(self) -> None:
+        """Unpack a ``.ska`` next to the config file after validating the pair matches the password."""
         if not self.security_enabled_var.get():
             messagebox.showerror("Security disabled", "Enable security before importing a key archive.")
             return
@@ -189,6 +199,7 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set("Key import failed")
 
     def start_application(self) -> None:
+        """Persist the form to YAML and spawn ``uvicorn main:app`` with cwd at the project root."""
         if self.server_process is not None and self.server_process.poll() is None:
             messagebox.showinfo("Already running", "The application is already running.")
             self.server_status_var.set("Running")
@@ -237,6 +248,7 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set("Application start failed")
 
     def stop_application(self) -> None:
+        """Terminate the child uvicorn process if it is running."""
         if self.server_process is None or self.server_process.poll() is not None:
             self.server_status_var.set("Stopped")
             messagebox.showinfo("Not running", "The application is not running.")
@@ -252,6 +264,7 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set("Application stop failed")
 
     def _on_close(self) -> None:
+        """Window close handler: stop uvicorn then destroy the Tk root."""
         if self.server_process is not None and self.server_process.poll() is None:
             try:
                 self.server_process.terminate()
@@ -261,6 +274,7 @@ class MonocleConfigApp(tk.Tk):
         self.destroy()
 
     def _build_ui(self) -> None:
+        """Create the notebook shell, path row, and bottom status/actions."""
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
@@ -297,6 +311,7 @@ class MonocleConfigApp(tk.Tk):
         ttk.Button(button_bar, text="Save", command=self.save_config).grid(row=0, column=2, padx=(8, 0))
 
     def _build_general_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Device identity and start/stop controls."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
@@ -334,6 +349,7 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_network_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Port, discovery toggle, and multiline bootstrap peers."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
@@ -351,7 +367,6 @@ class MonocleConfigApp(tk.Tk):
         )
         ttk.Label(frame, text=peers_text, foreground="#666666").grid(row=2, column=1, sticky="w", pady=(6, 4))
         ttk.Label(frame, text="Peers list").grid(row=3, column=0, sticky="nw", padx=(0, 12))
-        tk.Text
         self.bootstrap_text = tk.Text(frame, height=10, width=40, wrap="word")
         self.bootstrap_text.grid(row=3, column=1, sticky="nsew")
         frame.rowconfigure(3, weight=1)
@@ -359,6 +374,7 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_hotkeys_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Comma-separated paste hotkey tokens."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
@@ -374,6 +390,7 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_clipboard_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Clipboard polling interval field."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
@@ -383,6 +400,7 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_security_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Import or generate RSA key archives."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(0, weight=1)
 
@@ -426,8 +444,8 @@ class MonocleConfigApp(tk.Tk):
 
         return frame
 
-
     def _build_peers_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Peer policy checkbox (stored in YAML for future server use)."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(0, weight=1)
 
@@ -438,6 +456,7 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _browse_config(self) -> None:
+        """Pick a YAML path via the native file dialog."""
         selected = filedialog.asksaveasfilename(
             title="Select config file",
             defaultextension=".yaml",
@@ -448,6 +467,7 @@ class MonocleConfigApp(tk.Tk):
             self.config_path_var.set(selected)
 
     def _browse_key_archive(self) -> None:
+        """Pick a ``.ska`` key archive."""
         selected = filedialog.askopenfilename(
             title="Select key archive",
             filetypes=[("Secure key archives", "*.ska"), ("All files", "*.*")],
@@ -456,19 +476,23 @@ class MonocleConfigApp(tk.Tk):
             self.security_key_archive_var.set(selected)
 
     def _set_bootstrap_peers(self, peers: list[str]) -> None:
+        """Replace the bootstrap multiline widget with *peers*."""
         self.bootstrap_text.delete("1.0", tk.END)
         if peers:
             self.bootstrap_text.insert("1.0", "\n".join(peers))
 
     def _get_bootstrap_peers(self) -> list[str]:
+        """Parse non-empty lines from the bootstrap text box."""
         raw = self.bootstrap_text.get("1.0", tk.END)
         return [line.strip() for line in raw.splitlines() if line.strip()]
 
     def reset_defaults(self) -> None:
+        """Populate the form from :data:`DEFAULT_CONFIG`."""
         self._load_into_form(DEFAULT_CONFIG)
         self.status_var.set("Reset to defaults")
 
     def load_from_path(self, initial: bool = False) -> None:
+        """Load YAML from the path field, or apply defaults when missing."""
         path = Path(self.config_path_var.get())
         if not path.exists():
             self._load_into_form(DEFAULT_CONFIG)
@@ -492,7 +516,9 @@ class MonocleConfigApp(tk.Tk):
 
         self._load_into_form(data)
         self.status_var.set(f"Loaded {path}")
+
     def _merge_with_defaults(self, data: dict) -> dict:
+        """Fill missing sections/keys using :data:`DEFAULT_CONFIG` shapes."""
         merged = {
             "device": dict(DEFAULT_CONFIG["device"]),
             "network": dict(DEFAULT_CONFIG["network"]),
@@ -510,6 +536,7 @@ class MonocleConfigApp(tk.Tk):
         return merged
 
     def _load_into_form(self, data: dict) -> None:
+        """Copy a dict (often merged YAML) into Tk variables and widgets."""
         device = data.get("device", {})
         network = data.get("network", {})
         hotkeys = data.get("hotkeys", {})
@@ -536,8 +563,8 @@ class MonocleConfigApp(tk.Tk):
 
         self.peers_auto_accept_var.set(bool(peers.get("auto_accept", True)))
 
-
     def _collect_config(self) -> dict:
+        """Read and validate widgets into a dict suitable for ``yaml.safe_dump``."""
         try:
             port = int(self.network_port_var.get().strip())
         except ValueError as exc:
@@ -582,6 +609,7 @@ class MonocleConfigApp(tk.Tk):
         }
 
     def save_config(self) -> None:
+        """Write :meth:`_collect_config` output to the configured YAML path."""
         try:
             config_data = self._collect_config()
         except ValueError as exc:

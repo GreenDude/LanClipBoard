@@ -51,9 +51,7 @@ This tool provides a simple and secure way to share your clipboard across multip
 
 ☢️ Wayland flickering
 
-☢️ Restarting after a handshake results in discovery failure (as the device is already known by others)
-
-☢️ Windows File transfer saves the file in `AddData/Local/Temp/LanClipboard`
+☢️ Windows CTRL + SHIFT + V occasionally results in double paste
 
 **Potential issues**
 

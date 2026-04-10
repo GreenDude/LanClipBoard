@@ -13,8 +13,8 @@ hotkeys:
 clipboard:
   poll_interval_ms: 200
 security:
-  enabled: false
-  key_archive: null
-  key_password: null
+  enabled: true
+  key_archive: /Users/cloudraccoon/Desktop/Secret Key/SecretKey.ska
+  key_password: Secret
 peers:
   auto_accept: true
