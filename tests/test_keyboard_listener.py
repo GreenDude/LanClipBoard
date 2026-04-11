@@ -1,5 +1,6 @@
 """Tests for :mod:`keyboard_listener` helpers."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from keyboard_listener import _parse_win32_hotkey_for_suppress
 
 

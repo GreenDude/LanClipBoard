@@ -1,5 +1,6 @@
 """Linux clipboard via ``wl-clipboard`` (Wayland) or ``xclip`` (X11)."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import os
 import subprocess
 from pathlib import Path

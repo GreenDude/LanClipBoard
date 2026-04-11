@@ -1,5 +1,6 @@
 """FastAPI entrypoint: wires config, discovery, clipboard threads, and REST API."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from contextlib import asynccontextmanager
 import os
 import shutil

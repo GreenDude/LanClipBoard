@@ -1,5 +1,6 @@
 """Tests for key archive extraction safety."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import tempfile
 from pathlib import Path
 

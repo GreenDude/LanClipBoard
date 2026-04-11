@@ -1,5 +1,6 @@
 """Select a platform-specific clipboard implementation."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import platform
 
 supported_platform = ("Darwin", "Windows", "Linux")

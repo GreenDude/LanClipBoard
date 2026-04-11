@@ -1,5 +1,6 @@
 """Cryptographic helpers: RSA key generation, JWE for JSON, Fernet file encryption, and zip key archives."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from __future__ import annotations
 
 import json

@@ -1,5 +1,6 @@
 """HTTP API: clipboard sync, peer handshake, and optional JWE-wrapped payloads."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import json
 import logging
 import platform

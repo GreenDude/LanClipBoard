@@ -1,5 +1,6 @@
 """Tests for API helpers and request models."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock

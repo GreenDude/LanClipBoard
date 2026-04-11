@@ -1,5 +1,6 @@
 """Tests for :mod:`clipboard_factory`."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import pytest
 
 import clipboard_factory

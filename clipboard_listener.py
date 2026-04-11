@@ -1,5 +1,6 @@
 """Poll the local clipboard and broadcast changes to known peers."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import platform
 import time
 import traceback

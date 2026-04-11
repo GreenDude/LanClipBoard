@@ -1,5 +1,6 @@
 """Tests for :mod:`clipboard_storage` validation and storage behavior."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 

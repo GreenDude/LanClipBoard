@@ -1,5 +1,6 @@
 """Windows clipboard via ``pywin32`` and optional synthetic Ctrl+V."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import os
 import struct
 import time

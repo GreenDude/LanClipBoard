@@ -1,5 +1,6 @@
 """In-memory clipboard history keyed by peer, with optional Wayland paste-queue integration."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import os
 import platform
 

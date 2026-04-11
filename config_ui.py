@@ -1,5 +1,6 @@
 """Tkinter configuration UI for LanClipBoard (device, network, keys, and local uvicorn)."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from __future__ import annotations
 
 import platform

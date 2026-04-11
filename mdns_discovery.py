@@ -1,5 +1,6 @@
 """mDNS registration and peer discovery for LanClipBoard."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import asyncio
 import socket
 import time

@@ -1,5 +1,6 @@
 """Abstract clipboard backend used by the monitor and paste worker threads."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from abc import ABC, abstractmethod
 
 

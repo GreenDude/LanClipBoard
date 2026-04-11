@@ -1,5 +1,6 @@
 """macOS clipboard via PyObjC ``NSPasteboard``."""
-
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import AppKit
 from Foundation import NSURL
 from abstract_clipboard import AbstractClipboard
