@@ -1,16 +1,20 @@
+"""Cryptographic helpers: RSA key generation, JWE for JSON, Fernet file encryption, and zip key archives."""
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
-from typing import cast, Any, Iterable
+from typing import Any, cast
 
 import pyzipper
+from cryptography import fernet
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from jwcrypto import jwk, jwe
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from jwcrypto import jwe, jwk
 
-from cryptography.fernet import Fernet
 
 def generate_key_pair(
     configured_exponent: int = 65537,
@@ -21,6 +25,10 @@ def generate_key_pair(
     private_format=serialization.PrivateFormat.PKCS8,
     public_format=serialization.PublicFormat.SubjectPublicKeyInfo,
 ) -> tuple[bytes, bytes]:
+    """Generate an RSA keypair and return ``(private_pem, public_pem)``.
+
+    When *password* is set, the private key PEM is encrypted with best-available PKCS#8 encryption.
+    """
     private_key = rsa.generate_private_key(
         public_exponent=configured_exponent,
         key_size=configured_key_size,
@@ -51,8 +59,9 @@ def package_keys(
     archive_path,
     private_key_name: str = "private_key.pem",
     public_key_name: str = "public_key.pem",
-    archive_password: bytes = None,
+    archive_password: bytes | None = None,
 ):
+    """Write *private_key* and *public_key* into an AES-encrypted zip at *archive_path*."""
     archive_path = Path(archive_path)
     archive_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -70,24 +79,44 @@ def package_keys(
 
     return archive_path
 
-def unpack_keys(archive_path,
-                destination_dir=".",
-                archive_password: bytes = None):
+def unpack_keys(
+    archive_path,
+    destination_dir=".",
+    archive_password: bytes | None = None,
+) -> list[Path]:
+    """Extract a key archive into *destination_dir*, blocking zip-slip paths.
+
+    Returns paths to extracted files (directories in the archive are skipped).
+    """
     archive_path = Path(archive_path)
     destination_dir = Path(destination_dir)
     destination_dir.mkdir(parents=True, exist_ok=True)
+    dest_root = destination_dir.resolve()
 
+    extracted: list[Path] = []
     with pyzipper.AESZipFile(archive_path) as zf:
         if archive_password is not None:
             zf.setpassword(archive_password)
-        zf.extractall(destination_dir)
-        return [destination_dir / name for name in zf.namelist()]
+        for name in zf.namelist():
+            if not name or name.endswith("/"):
+                continue
+            if ".." in Path(name).parts:
+                raise ValueError(f"Unsafe archive entry: {name!r}")
+            out_path = (destination_dir / name).resolve()
+            if out_path != dest_root and dest_root not in out_path.parents:
+                raise ValueError(f"Archive entry escapes destination: {name!r}")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(name, "r") as src, open(out_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            extracted.append(out_path)
+    return extracted
 
 def check_key_pair(
     private_key_pem: bytes,
     public_key_pem: bytes,
     private_key_password: bytes | None = None,
 ) -> bool:
+    """Return True if *public_key_pem* matches the public half of *private_key_pem*."""
     try:
         private_key = serialization.load_pem_private_key(
             private_key_pem,
@@ -118,6 +147,7 @@ def check_key_pair(
 
 
 def encrypt_text(public_key: bytes, json_text) -> str:
+    """JWE-encrypt JSON-serializable *json_text* for the RSA public key in *public_key* (compact serialization)."""
     public_jwk = jwk.JWK.from_pem(public_key)
     plaintext = json.dumps(json_text)
 
@@ -141,6 +171,7 @@ def decrypt_text(
     encrypted_jwt: str,
     password: bytes | None = None,
 ) -> dict:
+    """Decrypt a compact JWE produced by :func:`encrypt_text` and parse the payload as JSON."""
     private_jwk = jwk.JWK.from_pem(private_key, password=password)
 
     token = jwe.JWE()
@@ -150,23 +181,23 @@ def decrypt_text(
 
 
 def encrypt_file(public_key: bytes, file_path: Path) -> str | None:
-    # encrypts the file before sending
+    """Encrypt *file_path* with a random Fernet key, wrap the key with RSA-OAEP, write ``*.enc`` beside the file."""
 
-    file_key = Fernet.generate_key()
-    fernet = Fernet(Fernet.generate_key())
+    file_key = fernet.Fernet.generate_key()
+    fernet_file = fernet.Fernet(file_key)
 
     with open(file_path, "rb") as f:
         original_data = f.read()
-    encrypted_data = fernet.encrypt(original_data)
+    encrypted_data = fernet_file.encrypt(original_data)
 
     rsa_public_key: rsa.RSAPublicKey = serialization.load_pem_public_key(public_key)
     encrypted_file_key = rsa_public_key.encrypt(
         file_key,
-      padding.OAEP(
+        padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
-            label=None
-        )
+            label=None,
+        ),
     )
 
     file_path = Path(file_path)
@@ -183,13 +214,17 @@ def encrypt_file(public_key: bytes, file_path: Path) -> str | None:
 
 
 def decrypt_file(private_key: bytes, key_pass: bytes, encrypted_file_path: str) -> str | None:
+    """Inverse of :func:`encrypt_file`; writes plaintext next to the ``.enc`` file and returns that path."""
     with open(encrypted_file_path, "rb") as f:
         print(f"Attempting to decrypt: {encrypted_file_path}")
         key_length = int.from_bytes(f.read(4), 'big')
         encrypted_file_key = f.read(key_length)
         encrypted_data = f.read()
 
-    rsa_private_key: rsa.RSAPrivateKey = serialization.load_pem_private_key(private_key, key_pass)
+    rsa_private_key: rsa.RSAPrivateKey = serialization.load_pem_private_key(
+        private_key,
+        password=key_pass,
+    )
     file_key = rsa_private_key.decrypt(
         encrypted_file_key,
         padding.OAEP(
@@ -199,8 +234,8 @@ def decrypt_file(private_key: bytes, key_pass: bytes, encrypted_file_path: str) 
         )
     )
 
-    fernet = Fernet(file_key)
-    decrypted_data = fernet.decrypt(encrypted_data)
+    f = fernet.Fernet(file_key)
+    decrypted_data = f.decrypt(encrypted_data)
 
     decrypted_file_path = encrypted_file_path.removesuffix(".enc")
 

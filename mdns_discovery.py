@@ -1,3 +1,7 @@
+"""mDNS registration and peer discovery for LanClipBoard."""
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
+import asyncio
 import socket
 import time
 from typing import Optional
@@ -5,10 +9,10 @@ from typing import Optional
 import httpx
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 
-import security_services
-
 
 class LanClipboardDiscovery:
+    """Register ``_lanclipboard._tcp`` services, browse peers, and perform HTTP handshakes."""
+
     SERVICE_TYPE = "_lanclipboard._tcp.local."
 
     def __init__(
@@ -22,6 +26,7 @@ class LanClipboardDiscovery:
         peer_list=None,
         peer_public_key_pem: bytes | None = None,
     ):
+        """Capture local identity, listen address, shared *peer_list*, and optional local public PEM."""
         self.local_id = local_id
         self.local_ip = local_ip
         self.device_name = device_name
@@ -29,14 +34,18 @@ class LanClipboardDiscovery:
         self.port = port
         self.protocol_version = protocol_version
         self.peer_list = peer_list if peer_list is not None else []
+        # Local public PEM (if any); advertised in TXT. Not used to encrypt outbound handshake
+        # without the remote peer's public key (that would produce ciphertext the peer cannot open).
         self.peer_public_key_pem = peer_public_key_pem
 
         self.aiozc: Optional[AsyncZeroconf] = None
         self.service_info = None
         self._seen = {}
         self._stopped = False
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def start(self):
+        """Bind Zeroconf to *local_ip*, publish this service, and subscribe to peer updates."""
         from zeroconf import IPVersion, ServiceInfo
 
         safe_device_name = self.device_name.removesuffix(".local")
@@ -66,10 +75,12 @@ class LanClipboardDiscovery:
         await self.aiozc.async_register_service(self.service_info)
         print(f"[discovery] registered {service_name} at {self.local_ip}:{self.port}")
 
+        self._loop = asyncio.get_running_loop()
         await self.aiozc.async_add_service_listener(self.SERVICE_TYPE, self)
         print("[discovery] browser started")
 
     async def bootstrap_handshake(self, peers: list[str] | None):
+        """Shake hands with statically configured *peers* (IPs), skipping self and empty entries."""
         if not peers:
             print("[discovery] bootstrap skipped: no peers configured")
             return
@@ -82,6 +93,7 @@ class LanClipboardDiscovery:
             await self._handshake_with_peer(ip, self.port)
 
     async def stop(self):
+        """Stop browsing and unregister Zeroconf resources."""
         self._stopped = True
         if self.aiozc is not None:
             await self.aiozc.async_close()
@@ -89,20 +101,34 @@ class LanClipboardDiscovery:
 
     # ---- ServiceListener-style callbacks used by async_add_service_listener ----
 
+    def _schedule_service_update(self, service_type: str, name: str) -> None:
+        """Run :meth:`handle_service_update` on the asyncio loop from a Zeroconf thread."""
+        if self._loop is None or self._stopped:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.handle_service_update(service_type, name),
+                self._loop,
+            )
+        except RuntimeError as e:
+            print(f"[discovery] failed to schedule service update: {e}")
+
     def add_service(self, zc, service_type: str, name: str) -> None:
+        """Zeroconf callback when a new instance appears."""
         print(f"[discovery] add_service: {name}")
-        import asyncio
-        asyncio.create_task(self.handle_service_update(service_type, name))
+        self._schedule_service_update(service_type, name)
 
     def update_service(self, zc, service_type: str, name: str) -> None:
+        """Zeroconf callback when TXT or addresses change."""
         print(f"[discovery] update_service: {name}")
-        import asyncio
-        asyncio.create_task(self.handle_service_update(service_type, name))
+        self._schedule_service_update(service_type, name)
 
     def remove_service(self, zc, service_type: str, name: str) -> None:
+        """Zeroconf callback when a service goes away (currently log-only)."""
         print(f"[discovery] remove_service: {name}")
 
     async def handle_service_update(self, service_type: str, name: str):
+        """Resolve a service, rate-limit by *device_id*, and invoke :meth:`_handshake_with_peer`."""
         if self._stopped or self.aiozc is None:
             return
 
@@ -155,6 +181,7 @@ class LanClipboardDiscovery:
         await self._handshake_with_peer(ip, port)
 
     async def _handshake_with_peer(self, ip: str, port: int):
+        """POST plaintext JSON to the peer's handshake endpoint and maybe append *ip* to *peer_list*."""
         url = f"http://{ip}:{port}/api/handshake"
 
         payload = {
@@ -167,28 +194,12 @@ class LanClipboardDiscovery:
             "supports_encryption": self.peer_public_key_pem is not None,
         }
 
-        #{
-        #   "device_id":"Windows@192.168.100.17",
-        #   "device_name":"DESKTOP-9I3INVQ",
-        #   "platform":"Windows",
-        #   "protocol_version":1,
-        #   "supports_text":true,
-        #   "supports_files":true,
-        #   "supports_encryption":false}
-
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 print(f"[discovery] attempting handshake with peer {ip}:{port}")
 
-                if self.peer_public_key_pem is not None:
-                    print(f"[discovery] encrypting payload for peer {ip}:{port}")
-                    encrypted_jwt = security_services.encrypt_text(self.peer_public_key_pem, payload)
-                    request_body = {"encrypted_jwt": encrypted_jwt}
-                    print(f"[discovery] sending encrypted payload to {ip}:{port}, \n\t{request_body}")
-                    r = await client.post(url, json=request_body)
-                else:
-                    print(f"[discovery] sending un-encrypted payload to {ip}:{port}, \n\t{payload}")
-                    r = await client.post(url, json=payload)
+                print(f"[discovery] sending handshake to peer {ip}:{port}, \n\t{payload}")
+                r = await client.post(url, json=payload)
 
                 r.raise_for_status()
                 data = r.json()

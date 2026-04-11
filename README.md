@@ -1,66 +1,132 @@
-# The why
+# LanClipboard
 
-Let's imagine you work on several devices on the same network, and eventually you need to copy and paste something between them.
-Using a messaging app or some cloud storage might solve that; however, it's a bit annoying to copy-paste text and files too often.
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-This tool provides a simple and secure way to share your clipboard across multiple devices on the same network.
+---
 
-# Supported Operating Systems
+## 🚀 Overview
 
-- Windows
-- macOS
-- Linux (Wayland)
-- Linux X11 (To be tested)
+LanClipboard is a **cross-platform LAN clipboard and file sharing tool**.
 
-# How to use
+It allows you to:
+- Copy text or files on one device
+- Paste them instantly on another device
+- Stay fully within your local network (no cloud)
 
-1. Install the latest version of python
-2. Clone the repository
-3. Install the required dependencies using `pip install` *to be updated*
-4. Run the application config using `config_ui.py`
-5. For the first run highly recommend pressing the `Restore to defaults` button to ensure proper key mapping
-6. Press the `Start` button to begin sharing your clipboard
-7. The application will start will make the device discoverable on the network for other devices running the similarly configured Lan Clipboard
-8. As soon as the first handshake passes, a shared clipboard will be available
-9. Use the configured shortcut to paste text and files (Ctrl + Shift + V on Windows, Cmd + Shift + V on Mac) or just regular Ctlr + V on Wayland 
-10. Press the `Stop` button to stop sharing your clipboard 
+---
 
-**Feature Set**
+## ⚡ Features
 
-✅ Cross-platform clipboard
+- Clipboard sync across devices
+- File transfer over LAN
+- Peer discovery (mDNS)
+- Hotkey-triggered paste
+- Optional encryption (JWE + Fernet)
+- GUI configuration tool
 
-✅ Sharing on LAN
+For the usage guide, please refer to [USAGE.md](docs/USAGE.md)
 
-✅ File Transfer
+---
 
-✅ Windows paste
+## 🧠 Architecture
 
-✅ Read shortcut from config on startup
+```
++-------------------+
+| Clipboard Listener|
++--------+----------+
+         |
+         v
++-------------------+
+| Local Storage     |
++--------+----------+
+         |
+         v
++-------------------+      +-------------------+
+| FastAPI Server    | <--> | Peer Devices      |
++-------------------+      +-------------------+
 
-✅ Linux Wayland paste
+         ^
+         |
++-------------------+
+| Keyboard Listener |
++-------------------+
+```
 
-✅ Linux X11 paste
+---
 
-✅ Request and Response Body Security
+## 📦 Installation
 
-✅ Secure file transfer
+```bash
+git clone <repo>
+cd lanclipboard
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-✅ Available devices discovery (via secure handshake?)
+---
 
-**Known issues**
+## ▶️ Usage
 
-☢️ Wayland flickering
+```bash
+python config_ui.py
+python main.py
+```
 
-☢️ Restarting after a handshake results in discovery failure (as the device is already known by others)
+---
 
-☢️ Windows File transfer saves the file in `AddData/Local/Temp/LanClipboard`
+## ⌨️ Default Shortcuts
 
-**Potential issues**
+| OS        | Shortcut            |
+|----------|--------------------|
+| Windows  | Ctrl + Shift + V   |
+| macOS    | Cmd + Shift + V    |
+| Wayland  | Ctrl + V           |
 
-⚠️KDE not tested
+---
 
-⚠️X11 Not tested
+## 🔐 Security
 
-⚠️Potential compatibility issues with unexpected Linux Desktop Environments
+- Optional encryption enabled via config
+- Uses RSA + Fernet
+- Designed for trusted LAN environments
 
-⚠️To check with 2 Wayland devices (might go into a clipboard update loop)
+For more details please refer to [SECURITY.md](docs/SECURITY.md)
+
+---
+
+## 📡 API Examples
+
+### Handshake
+```http
+POST /api/handshake
+```
+
+### Clipboard Entry
+```http
+POST /api/clipboard_entry
+{
+  "type": "text",
+  "content": "Hello world"
+}
+```
+
+### File Request
+```http
+POST /api/file
+{
+  "path": "/tmp/file.txt"
+}
+```
+# Planned Features
+
+- IPV6 support
+- Image snippet support
+- Configurable Peer List
+
+---
+## 📄 License
+
+This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.

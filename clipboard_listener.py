@@ -1,13 +1,15 @@
+"""Poll the local clipboard and broadcast changes to known peers."""
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import platform
-from threading import Event
 import time
 import traceback
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+from threading import Event
 
+from abstract_clipboard import AbstractClipboard
 from api_module import broadcast_to_peers
 from clipboard_storage import ClipboardEntry, ClipboardStorage
-from abstract_clipboard import AbstractClipboard  # your ABC
-from config.config_loader import AppConfig
 
 
 def monitor_clipboard(
@@ -21,6 +23,7 @@ def monitor_clipboard(
         private_key_pem,
         password,
         ) -> None:
+    """Poll *clipboard* until *stop_event*; dedupe by (type, value) and broadcast to *peer_list*."""
 
     last_fingerprint: tuple[str, str] | None = None  # (type, entry)
 

@@ -1,6 +1,9 @@
-import time
+"""Windows clipboard via ``pywin32`` and optional synthetic Ctrl+V."""
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import os
 import struct
+import time
 from pathlib import Path
 
 import win32clipboard
@@ -11,24 +14,25 @@ from abstract_clipboard import AbstractClipboard
 
 
 class WindowsClipboard(AbstractClipboard):
+    """Unicode text and ``CF_HDROP`` file lists."""
 
     def __init__(self):
+        """Prepare a pynput keyboard controller for post-update paste."""
         self.keyboard_controller = keyboard.Controller()
 
-
-    def open_clipboard_safely(self, number_of_retries = 5, delay = 0.1):
+    def open_clipboard_safely(self, number_of_retries=5, delay=0.1):
+        """Retry ``OpenClipboard`` when another app holds the clipboard."""
         for _ in range(number_of_retries):
             try:
                 win32clipboard.OpenClipboard()
                 return True
-            except:
+            except Exception:
                 time.sleep(delay)
 
         return False
 
-
-
     def get_clipboard_entry(self):
+        """Return Unicode text or a stringified list of dropped file paths."""
         _clipboard_opened = self.open_clipboard_safely()
         if _clipboard_opened:
             try:
@@ -45,6 +49,7 @@ class WindowsClipboard(AbstractClipboard):
 
 
     def paste_clipboard_entry(self, entry):
+        """Set clipboard content then send Ctrl+V when the update succeeds."""
         print(f"Attempting to paste {entry}, which is a {type(entry)}")
 
         if not self.open_clipboard_safely():

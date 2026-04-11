@@ -1,12 +1,16 @@
+"""Linux clipboard via ``wl-clipboard`` (Wayland) or ``xclip`` (X11)."""
+# Copyright (c) 2026 Gheorghii Mosin
+# Licensed under the MIT License
 import os
 import subprocess
 from pathlib import Path
-from urllib.parse import quote, urlparse, unquote
+from urllib.parse import quote, unquote, urlparse
 
 from abstract_clipboard import AbstractClipboard
 
 
 def get_linux_clipboard():
+    """Return :class:`WaylandClipboard` or :class:`X11Clipboard` based on ``XDG_SESSION_TYPE``."""
     xdg = os.environ.get("XDG_SESSION_TYPE")
     if xdg == "wayland":
         return WaylandClipboard()
@@ -17,6 +21,7 @@ def get_linux_clipboard():
 
 
 def _build_uri_list(paths: list[str]) -> str:
+    """Format *paths* as a ``text/uri-list`` body."""
     uris = []
     for path in paths:
         resolved = Path(path).expanduser().resolve()
@@ -25,10 +30,12 @@ def _build_uri_list(paths: list[str]) -> str:
 
 
 def _build_gnome_copied_files(paths: list[str], mode: str = "copy") -> str:
+    """Build ``x-special/gnome-copied-files`` payload for *paths*."""
     return mode + "\n" + _build_uri_list(paths)
 
 
 def _parse_uri_list(data: str) -> list[str]:
+    """Parse ``file://`` lines from a URI list string."""
     paths = []
     for line in data.splitlines():
         line = line.strip()
@@ -41,6 +48,7 @@ def _parse_uri_list(data: str) -> list[str]:
 
 
 def _parse_gnome_copied_files(data: str) -> tuple[str, list[str]]:
+    """Split gnome-copied-files payload into *(mode, paths)*."""
     lines = [line.strip() for line in data.splitlines() if line.strip()]
     if not lines:
         return "copy", []
@@ -51,8 +59,10 @@ def _parse_gnome_copied_files(data: str) -> tuple[str, list[str]]:
 
 
 class WaylandClipboard(AbstractClipboard):
+    """Clipboard integration using ``wl-paste`` / ``wl-copy``."""
 
     def _check_clipboard_type(self):
+        """Return ``files``, ``text``, or ``unknown`` from ``wl-paste -l``."""
         list_of_types = []
         try:
             types = subprocess.check_output(["wl-paste", "-l"], text=True)
@@ -71,6 +81,7 @@ class WaylandClipboard(AbstractClipboard):
         return "unknown"
 
     def get_clipboard_entry(self):
+        """Read text or file URI list from the Wayland clipboard."""
         clipboard_type = self._check_clipboard_type()
 
         try:
@@ -100,6 +111,7 @@ class WaylandClipboard(AbstractClipboard):
         return "empty", None
 
     def paste_clipboard_entry(self, entry):
+        """Push *entry* to the clipboard using ``wl-copy``."""
         print(f"Attempting to paste {entry}, which is a {type(entry)}")
 
         if isinstance(entry, str):
@@ -139,8 +151,10 @@ class WaylandClipboard(AbstractClipboard):
 
 
 class X11Clipboard(AbstractClipboard):
+    """Clipboard integration using ``xclip``."""
 
     def _check_clipboard_type(self):
+        """Return ``files``, ``text``, or ``unknown`` from ``TARGETS``."""
         list_of_types = []
         try:
             types = subprocess.check_output(
@@ -161,6 +175,7 @@ class X11Clipboard(AbstractClipboard):
         return "unknown"
 
     def get_clipboard_entry(self):
+        """Read text or files from the X11 clipboard."""
         clipboard_type = self._check_clipboard_type()
 
         try:
@@ -197,6 +212,7 @@ class X11Clipboard(AbstractClipboard):
         return "empty", None
 
     def paste_clipboard_entry(self, entry):
+        """Write *entry* to the X11 clipboard (URI list + optional gnome metadata)."""
         print(f"Attempting to paste {entry}, which is a {type(entry)}")
 
         if isinstance(entry, str):
