@@ -18,3 +18,5 @@ security:
   key_password: null
 peers:
   auto_accept: true
+testing:
+  endpoints_enabled: false

@@ -292,6 +292,9 @@ def build_rest_router():
     @rest_router.get("/peers")
     async def get_peers(request: Request):
         """Return the in-memory list of peer IPs that have handshaked."""
+        if not request.app.state.testing_endpoints_enabled:
+            return HTTPException(status_code=403, detail="Endpoint disabled")
+
         return request.app.state.peer_list
 
     @rest_router.post("/clipboard_entry")
@@ -325,14 +328,21 @@ def build_rest_router():
         )
 
     @rest_router.get("/clipboard_entries")
-    async def get_clipboard_entries(cs: ClipboardStorage = Depends(get_storage)):
+    async def get_clipboard_entries(
+            request: Request,
+            cs: ClipboardStorage = Depends(get_storage)
+    ):
         """Return all latest entries per peer address."""
+        if not request.app.state.testing_endpoints_enabled:
+            return HTTPException(status_code=403, detail="Endpoint disabled")
         entries = cs.get_all_clipboard_entries()
         return {"entries": entries or []}
 
     @rest_router.get("/clipboard_entries/latest")
-    async def get_clipboard_entry(cs: ClipboardStorage = Depends(get_storage)):
+    async def get_clipboard_entry(request: Request, cs: ClipboardStorage = Depends(get_storage)):
         """Return the single newest stored entry, or JSON ``null``."""
+        if not request.app.state.testing_endpoints_enabled:
+            return HTTPException(status_code=403, detail="Endpoint disabled")
         return cs.get_latest_clipboard_entry() if cs.get_latest_clipboard_entry() else None
 
     @rest_router.post("/file")
