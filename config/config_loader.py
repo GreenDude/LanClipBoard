@@ -58,6 +58,7 @@ class PeerConfig(BaseModel):
 class TestingConfig(BaseModel):
     """Configuration used for testing."""
     endpoints_enabled: bool
+    log_key_input: bool
 
 
 class AppConfig(BaseModel):
