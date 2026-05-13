@@ -55,6 +55,12 @@ class PeerConfig(BaseModel):
     auto_accept: bool
 
 
+class TestingConfig(BaseModel):
+    """Configuration used for testing."""
+    endpoints_enabled: bool
+    log_key_input: bool
+
+
 class AppConfig(BaseModel):
     """Root configuration object produced by :func:`load_config`."""
 
@@ -64,6 +70,7 @@ class AppConfig(BaseModel):
     clipboard: ClipboardConfig
     security: SecurityConfig
     peers: PeerConfig
+    testing: TestingConfig
 
 
 def load_config(path: str = "config/config.yaml") -> AppConfig:

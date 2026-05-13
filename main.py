@@ -121,6 +121,9 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.public_key_pem = public_key_pem
     app.state.private_key_password = private_key_password
 
+    app.state.testing_endpoints_enabled = app.state.config.testing.endpoints_enabled
+    app.state.testing_log_key_input = app.state.config.testing.log_key_input
+
     if private_key_pem is not None:
         print("[security] private key loaded")
     else:
@@ -200,6 +203,7 @@ async def async_clipboard_lifespan(app: FastAPI):
                 app.state.paste_queue,
                 app.state.clipboard_storage,
                 app.state.paste_hotkey,
+                app.state.testing_log_key_input
             ),
             daemon=True,
             name="keyboard_thread",

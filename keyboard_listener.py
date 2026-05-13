@@ -120,6 +120,7 @@ def monitor_keyboard(
     paste_queue: Queue,
     clipboard_storage: ClipboardStorage,
     paste_hotkey: set[str],
+    log_key_input: bool,
 ) -> None:
     """Listen for *paste_hotkey* and push :meth:`ClipboardStorage.get_latest_clipboard_entry` to *paste_queue*.
 
@@ -136,13 +137,16 @@ def monitor_keyboard(
         k = normalize_key(key)
 
         pressed.add(k)
-        print(pressed)
-        print(paste_hotkey)
+        if log_key_input:
+            print(pressed)
+            print(paste_hotkey)
 
         if paste_hotkey <= pressed and not combo_active:
             paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
             combo_active = True
-            print(paste_queue.qsize())
+            if log_key_input:
+                print(pressed)
+                print(paste_queue.qsize())
 
     def on_release(key):
         """Drop released keys and allow the chord to retrigger once modifiers change."""
