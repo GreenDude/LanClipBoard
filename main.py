@@ -20,6 +20,8 @@ from clipboard_listener import monitor_clipboard
 from clipboard_storage import ClipboardStorage
 from keyboard_listener import monitor_keyboard
 from paste_queue_handler import paste_queue_handler
+from peer_registry import PeerRegistry
+from shared_file_registry import SharedFileRegistry
 
 import tempfile
 import security_services
@@ -36,7 +38,7 @@ def load_private_key_from_config(config):
         return none_key
 
     archive_path = config.security.key_archive
-    password = config.security.key_password
+    password = config.security.key_password or os.environ.get("LANCLIPBOARD_KEY_PASSWORD")
 
     if not archive_path:
         return none_key
@@ -107,7 +109,8 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     app.state.local_ip = get_local_ip()
     app.state.local_id = platform.system() + "@" + app.state.local_ip
-    app.state.peer_list = []
+    app.state.peer_registry = PeerRegistry(auto_accept=app.state.config.peers.auto_accept)
+    app.state.shared_file_registry = SharedFileRegistry()
 
     app.state.clipboard_storage = ClipboardStorage(app.state.local_id)
     app.state.clipboard = get_clipboard()
@@ -141,11 +144,12 @@ async def async_clipboard_lifespan(app: FastAPI):
         args=(app.state.clipboard,
               app.state.clipboard_storage,
               app.state.local_id, stop_event,
-              app.state.peer_list,
+              app.state.peer_registry,
               app.state.config.clipboard.poll_interval_ms,
               app.state.public_key_pem,
               app.state.private_key_pem,
               app.state.private_key_password,
+              app.state.shared_file_registry,
               ),
         daemon=True,
         name="clipboard_thread",
@@ -173,7 +177,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         platform_name=platform.system(),
         port=port,
         protocol_version=1,
-        peer_list=app.state.peer_list,
+        peer_registry=app.state.peer_registry,
         peer_public_key_pem=app.state.public_key_pem
     )
 

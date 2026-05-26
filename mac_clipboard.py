@@ -4,6 +4,7 @@
 import AppKit
 from Foundation import NSURL
 from abstract_clipboard import AbstractClipboard
+from clipboard_payloads import serialize_file_list
 from pynput import keyboard
 
 TEXT_TYPES = [
@@ -26,7 +27,7 @@ class MacClipboard(AbstractClipboard):
         if urls:
             paths = [u.path() for u in urls if getattr(u, "isFileURL", lambda: False)()]
             if paths:
-                return "files", str(paths)
+                return "files", serialize_file_list(paths)
 
         # then text
         for t in TEXT_TYPES:

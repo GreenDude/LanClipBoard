@@ -50,7 +50,7 @@ class SecurityConfig(BaseModel):
 
 
 class PeerConfig(BaseModel):
-    """Peer policy flags (``auto_accept`` is reserved for future enforcement; not yet read by the server)."""
+    """Peer policy flags controlling whether unknown peers may auto-authorize."""
 
     auto_accept: bool
 

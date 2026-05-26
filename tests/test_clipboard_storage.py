@@ -1,6 +1,7 @@
 """Tests for :mod:`clipboard_storage` validation and storage behavior."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
+import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
@@ -27,7 +28,7 @@ def test_new_entry_is_valid_requires_nonempty_entry():
 
 
 def test_new_entry_is_valid_type_and_platform():
-    assert _new_entry_is_valid(_entry(type="files")) is True
+    assert _new_entry_is_valid(_entry(type="files", entry=json.dumps(["/tmp/file.txt"]))) is True
     assert _new_entry_is_valid(_entry(type="image")) is False
     assert _new_entry_is_valid(_entry(platform="Plan9")) is False
 

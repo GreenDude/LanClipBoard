@@ -3,10 +3,13 @@
 # Licensed under the MIT License
 from __future__ import annotations
 
+import os
 import platform
+import shutil
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import tempfile
 import yaml
 
 import re
@@ -108,8 +111,6 @@ class MonocleConfigApp(tk.Tk):
             return
 
         config_dir = self._get_config_dir()
-        private_key_path = config_dir / f"{key_name}_private.pem"
-        public_key_path = config_dir / f"{key_name}_public.pem"
         archive_path = config_dir / f"{key_name}.ska"
 
         try:
@@ -117,21 +118,18 @@ class MonocleConfigApp(tk.Tk):
                 password=key_password.encode("utf-8")
             )
 
-            private_key_path.write_bytes(private_key)
-            public_key_path.write_bytes(public_key)
-
             security_services.package_keys(
                 private_key=private_key,
                 public_key=public_key,
                 archive_path=archive_path,
-                private_key_name=private_key_path.name,
-                public_key_name=public_key_path.name,
+                private_key_name=f"{key_name}_private.pem",
+                public_key_name=f"{key_name}_public.pem",
                 archive_password=key_password.encode("utf-8"),
             )
 
             self.security_enabled_var.set(True)
             self.security_key_archive_var.set(str(archive_path))
-            self.security_key_password_var.set(key_password)
+            self.security_key_password_var.set("")
 
             self.save_config()
             self.status_var.set(f"Generated key archive: {archive_path}")
@@ -161,12 +159,12 @@ class MonocleConfigApp(tk.Tk):
             messagebox.showerror("Missing password", "Enter the key password.")
             return
 
-        config_dir = self._get_config_dir()
+        temp_dir = Path(tempfile.mkdtemp(prefix="lanclipboard_import_"))
 
         try:
             extracted_files = security_services.unpack_keys(
                 archive_path=archive_path,
-                destination_dir=config_dir,
+                destination_dir=temp_dir,
                 archive_password=key_password.encode("utf-8"),
             )
 
@@ -192,12 +190,14 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set(f"Imported key archive: {archive_path}")
             messagebox.showinfo(
                 "Success",
-                f"Key archive imported successfully.\nFiles extracted to:\n{config_dir}"
+                "Key archive validated and configured successfully."
             )
 
         except Exception as exc:
             messagebox.showerror("Import failed", f"Failed to import key archive:\n{exc}")
             self.status_var.set("Key import failed")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def start_application(self) -> None:
         """Persist the form to YAML and spawn ``uvicorn main:app`` with cwd at the project root."""
@@ -237,9 +237,13 @@ class MonocleConfigApp(tk.Tk):
         ]
 
         try:
+            env = dict(os.environ)
+            if self.security_key_password_var.get():
+                env["LANCLIPBOARD_KEY_PASSWORD"] = self.security_key_password_var.get()
             self.server_process = subprocess.Popen(
                 cmd,
                 cwd=str(Path(self.config_path_var.get()).resolve().parent.parent),
+                env=env,
             )
             self.server_status_var.set(f"Running on port {port}")
             self.status_var.set("Application started")
@@ -560,7 +564,7 @@ class MonocleConfigApp(tk.Tk):
 
         self.security_enabled_var.set(bool(security.get("enabled", False)))
         self.security_key_archive_var.set(security.get("key_archive") or "")
-        self.security_key_password_var.set(security.get("key_password") or "")
+        self.security_key_password_var.set("")
 
         self.peers_auto_accept_var.set(bool(peers.get("auto_accept", True)))
 
@@ -581,8 +585,6 @@ class MonocleConfigApp(tk.Tk):
             raise ValueError("Paste hotkey cannot be empty")
 
         key_archive = self.security_key_archive_var.get().strip() or None
-        key_password = self.security_key_password_var.get() or None
-
         return {
             "device": {
                 "id": self.device_id_var.get().strip() or "auto",
@@ -602,7 +604,7 @@ class MonocleConfigApp(tk.Tk):
             "security": {
                 "enabled": self.security_enabled_var.get(),
                 "key_archive": key_archive,
-                "key_password": key_password,
+                "key_password": None,
             },
             "peers": {
                 "auto_accept": self.peers_auto_accept_var.get(),

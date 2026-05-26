@@ -5,6 +5,7 @@ import json
 import logging
 import platform
 import socket
+import tempfile
 from pathlib import Path
 from queue import Queue
 from typing import Any, List, Type
@@ -15,12 +16,16 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, responses
 from fastapi.params import Depends
 from pydantic import BaseModel, field_validator
+from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
 import security_services
 from clipboard_storage import ClipboardEntry, ClipboardStorage
+from peer_registry import PeerRegistry
+from shared_file_registry import SharedFileRegistry
 
 logger = logging.getLogger(__name__)
+TRANSFER_TEMP_DIR = Path(tempfile.gettempdir()) / "LanClipboard"
 
 
 class FileRequest(BaseModel):
@@ -31,7 +36,8 @@ class FileRequest(BaseModel):
     @field_validator("path")
     @classmethod
     def reject_path_traversal(cls, v: str) -> str:
-        if ".." in Path(v).parts:
+        path = Path(v)
+        if ".." in path.parts or not path.is_absolute():
             raise ValueError("path must not contain '..' components")
         return v
 
@@ -223,7 +229,17 @@ def get_private_key(request: Request) -> bytes | None:
 
 def get_known_peers(request: Request) -> list[str]:
     """IPs that have completed handshake (or bootstrap); used as a coarse ACL."""
-    return request.app.state.peer_list
+    return request.app.state.peer_registry.get_authorized_ips()
+
+
+def get_peer_registry(request: Request) -> PeerRegistry:
+    """FastAPI dependency: shared peer registry."""
+    return request.app.state.peer_registry
+
+
+def get_shared_file_registry(request: Request) -> SharedFileRegistry:
+    """FastAPI dependency: shared file allowlist registry."""
+    return request.app.state.shared_file_registry
 
 
 def build_rest_router():
@@ -245,11 +261,9 @@ def build_rest_router():
         local_id = request.app.state.local_id
         local_name = request.app.state.device_name
         local_platform = platform.system()
+        peer_registry = request.app.state.peer_registry
 
         remote_ip = request.client.host
-        if remote_ip not in request.app.state.peer_list:
-            request.app.state.peer_list.append(remote_ip)
-            print(f"[handshake] added peer {remote_ip} to peer_list")
 
         if req.device_id == local_id:
             return HandshakeResponse(
@@ -277,6 +291,26 @@ def build_rest_router():
                 supports_encryption=False,
             )
 
+        if not peer_registry.can_accept(remote_ip):
+            return HandshakeResponse(
+                accepted=False,
+                reason="peer_not_allowed",
+                device_id=local_id,
+                device_name=local_name,
+                platform=local_platform,
+                protocol_version=1,
+                supports_text=True,
+                supports_files=True,
+                supports_encryption=False,
+            )
+
+        peer_registry.authorize(
+            ip=remote_ip,
+            device_id=req.device_id,
+            device_name=req.device_name,
+            platform=req.platform,
+        )
+
         return HandshakeResponse(
             accepted=True,
             reason=None,
@@ -293,9 +327,9 @@ def build_rest_router():
     async def get_peers(request: Request):
         """Return the in-memory list of peer IPs that have handshaked."""
         if not request.app.state.testing_endpoints_enabled:
-            return HTTPException(status_code=403, detail="Endpoint disabled")
+            raise HTTPException(status_code=403, detail="Endpoint disabled")
 
-        return request.app.state.peer_list
+        return request.app.state.peer_registry.get_authorized_ips()
 
     @rest_router.post("/clipboard_entry")
     async def post_clipboard_entry(
@@ -334,7 +368,7 @@ def build_rest_router():
     ):
         """Return all latest entries per peer address."""
         if not request.app.state.testing_endpoints_enabled:
-            return HTTPException(status_code=403, detail="Endpoint disabled")
+            raise HTTPException(status_code=403, detail="Endpoint disabled")
         entries = cs.get_all_clipboard_entries()
         return {"entries": entries or []}
 
@@ -342,7 +376,7 @@ def build_rest_router():
     async def get_clipboard_entry(request: Request, cs: ClipboardStorage = Depends(get_storage)):
         """Return the single newest stored entry, or JSON ``null``."""
         if not request.app.state.testing_endpoints_enabled:
-            return HTTPException(status_code=403, detail="Endpoint disabled")
+            raise HTTPException(status_code=403, detail="Endpoint disabled")
         return cs.get_latest_clipboard_entry() if cs.get_latest_clipboard_entry() else None
 
     @rest_router.post("/file")
@@ -350,6 +384,7 @@ def build_rest_router():
         request: Request,
         public_key_pem: bytes | None = Depends(get_public_key),
         known_peers: list[str] = Depends(get_known_peers),
+        shared_file_registry: SharedFileRegistry = Depends(get_shared_file_registry),
     ):
         """Stream a file from a server-local path (optionally encrypted for the requester)."""
 
@@ -359,14 +394,25 @@ def build_rest_router():
         raw_body = await request.body()
         req_json = _try_decrypt_body(request, raw_body, FileRequest)
         file_request = FileRequest.model_validate_json(req_json)
-        base_file_path = Path(file_request.path)
+        base_file_path = Path(file_request.path).expanduser().resolve(strict=False)
 
+        if not base_file_path.is_file():
+            raise HTTPException(status_code=404, detail="Requested file was not found")
+        if not shared_file_registry.is_allowed(base_file_path):
+            raise HTTPException(status_code=403, detail="Requested file is not shared")
+
+        cleanup_path: Path | None = None
         if public_key_pem is None:
             file_path = base_file_path
         else:
-            encrypted_file_path = security_services.encrypt_file(public_key_pem, base_file_path)
+            encrypted_file_path = security_services.encrypt_file(
+                public_key_pem,
+                base_file_path,
+                output_dir=TRANSFER_TEMP_DIR,
+            )
             if encrypted_file_path is not None:
                 file_path = Path(encrypted_file_path)
+                cleanup_path = file_path
             else:
                 raise HTTPException(status_code=500, detail="Failed to encrypt file for transfer")
 
@@ -382,6 +428,7 @@ def build_rest_router():
             iter_file(),
             headers=headers,
             media_type="application/octet-stream",
+            background=BackgroundTask(lambda: cleanup_path and cleanup_path.unlink(missing_ok=True)),
         )
 
     return rest_router
@@ -389,7 +436,7 @@ def build_rest_router():
 
 def broadcast_to_peers(
     entry: ClipboardEntry,
-    peers: list = None,
+    peers: PeerRegistry | list | None = None,
     public_key_pem: bytes | None = None,
     private_key_pem: bytes | None = None,
     private_key_password: bytes | None = None,
@@ -402,12 +449,16 @@ def broadcast_to_peers(
     archive so encrypting with the local public key matches the peers' key material.
     """
     if peers is None:
-        peers = ["localhost"]
+        peer_addresses = ["localhost"]
+    elif isinstance(peers, PeerRegistry):
+        peer_addresses = peers.get_authorized_ips()
+    else:
+        peer_addresses = peers
 
     request_body = _try_encrypt_body(entry, public_key_pem)
 
     with httpx.Client(timeout=2) as client:
-        for ip in peers:
+        for ip in peer_addresses:
             url = f"http://{ip}:{port}/api/clipboard_entry"
             try:
                 r = client.post(url, json=request_body)
@@ -443,12 +494,10 @@ def get_files(
 
     Failures are logged; returns a list of local paths successfully retrieved (possibly partial).
     """
-    import tempfile
-
     timeout = httpx.Timeout(connect=5, read=60, write=30, pool=5)
     url = f"http://{ip}:{port}/api/file"
 
-    temp_dir = Path(tempfile.gettempdir()) / "LanClipboard"
+    temp_dir = TRANSFER_TEMP_DIR
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     downloaded_paths = []
@@ -491,7 +540,12 @@ def get_files(
 
                     print(f"File {file_name} saved")
                     if temp_file.suffix == ".enc":
-                        decrypted_file_path = security_services.decrypt_file(private_key, key_pass, str(temp_file))
+                        decrypted_file_path = security_services.decrypt_file(
+                            private_key,
+                            key_pass,
+                            str(temp_file),
+                            output_dir=temp_dir,
+                        )
                         temp_file.unlink(missing_ok=True)
                         if decrypted_file_path is not None:
                             downloaded_paths.append(decrypted_file_path)

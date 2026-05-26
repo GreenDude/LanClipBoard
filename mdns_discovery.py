@@ -8,6 +8,7 @@ from typing import Optional
 
 import httpx
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
+from peer_registry import PeerRegistry
 
 
 class LanClipboardDiscovery:
@@ -23,7 +24,7 @@ class LanClipboardDiscovery:
         platform_name: str,
         port: int,
         protocol_version: int = 1,
-        peer_list=None,
+        peer_registry: PeerRegistry | None = None,
         peer_public_key_pem: bytes | None = None,
     ):
         """Capture local identity, listen address, shared *peer_list*, and optional local public PEM."""
@@ -33,7 +34,7 @@ class LanClipboardDiscovery:
         self.platform_name = platform_name
         self.port = port
         self.protocol_version = protocol_version
-        self.peer_list = peer_list if peer_list is not None else []
+        self.peer_registry = peer_registry if peer_registry is not None else PeerRegistry()
         # Local public PEM (if any); advertised in TXT. Not used to encrypt outbound handshake
         # without the remote peer's public key (that would produce ciphertext the peer cannot open).
         self.peer_public_key_pem = peer_public_key_pem
@@ -41,6 +42,7 @@ class LanClipboardDiscovery:
         self.aiozc: Optional[AsyncZeroconf] = None
         self.service_info = None
         self._seen = {}
+        self._service_ips: dict[str, str] = {}
         self._stopped = False
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -89,6 +91,7 @@ class LanClipboardDiscovery:
             if not ip or ip == self.local_ip:
                 continue
 
+            self.peer_registry.mark_candidate(ip)
             print(f"[discovery] bootstrap handshake with {ip}:{self.port}")
             await self._handshake_with_peer(ip, self.port)
 
@@ -124,8 +127,11 @@ class LanClipboardDiscovery:
         self._schedule_service_update(service_type, name)
 
     def remove_service(self, zc, service_type: str, name: str) -> None:
-        """Zeroconf callback when a service goes away (currently log-only)."""
+        """Zeroconf callback when a service goes away."""
         print(f"[discovery] remove_service: {name}")
+        ip = self._service_ips.pop(name, None)
+        if ip is not None:
+            self.peer_registry.revoke_ip(ip)
 
     async def handle_service_update(self, service_type: str, name: str):
         """Resolve a service, rate-limit by *device_id*, and invoke :meth:`_handshake_with_peer`."""
@@ -167,6 +173,8 @@ class LanClipboardDiscovery:
 
         ip = ipv4_addresses[0]
         port = info.port
+        self._service_ips[name] = ip
+        self.peer_registry.mark_candidate(ip)
 
         print(f"[discovery] all addresses: {addresses}")
         print(f"[discovery] selected IPv4: {ip}")
@@ -212,9 +220,14 @@ class LanClipboardDiscovery:
             print(f"[discovery] handshake rejected by {ip}:{port}: {data.get('reason')}")
             return
 
-        if ip not in self.peer_list:
-            self.peer_list.append(ip)
-            print(f"[discovery] added peer {ip} to peer_list")
+        self.peer_registry.authorize(
+            ip=ip,
+            device_id=data.get("device_id", ""),
+            device_name=data.get("device_name", ""),
+            platform=data.get("platform", ""),
+            port=port,
+        )
+        print(f"[discovery] added peer {ip} to peer registry")
 
         print(
             f"[discovery] handshake accepted by "

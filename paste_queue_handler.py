@@ -1,11 +1,11 @@
 """Background worker: consume :class:`ClipboardEntry` objects from a queue and paste locally."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
-import ast
 from queue import Empty, Queue
 
 from abstract_clipboard import AbstractClipboard
 import api_module
+from clipboard_payloads import parse_file_list
 from clipboard_storage import ClipboardEntry
 
 
@@ -40,7 +40,7 @@ def paste_queue_handler(
                 print("If the entry type is files")
                 ip_str = queued_entry.origin if queued_entry.origin != "local" else "localhost"
                 downloaded_paths = api_module.get_files(
-                    [p for p in ast.literal_eval(queued_entry.entry)],
+                    parse_file_list(queued_entry.entry),
                     ip_str,
                     public_key,
                     private_key,

@@ -11,6 +11,7 @@ import win32con
 from pynput import keyboard
 
 from abstract_clipboard import AbstractClipboard
+from clipboard_payloads import serialize_file_list
 
 
 class WindowsClipboard(AbstractClipboard):
@@ -41,7 +42,7 @@ class WindowsClipboard(AbstractClipboard):
                 elif win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_HDROP):
                     path_list = list(win32clipboard.GetClipboardData(win32clipboard.CF_HDROP))
                     normalized_list = [Path(p).as_posix() for p in path_list]
-                    return "files", str(normalized_list)
+                    return "files", serialize_file_list(normalized_list)
             finally:
                 win32clipboard.CloseClipboard()
 

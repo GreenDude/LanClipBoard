@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 from abstract_clipboard import AbstractClipboard
+from clipboard_payloads import serialize_file_list
 
 
 def get_linux_clipboard():
@@ -101,7 +102,7 @@ class WaylandClipboard(AbstractClipboard):
                 )
                 file_list = _parse_uri_list(output)
                 if file_list:
-                    return "files", str(file_list)
+                    return "files", serialize_file_list(file_list)
 
         except subprocess.CalledProcessError:
             pass
@@ -191,7 +192,7 @@ class X11Clipboard(AbstractClipboard):
                     )
                     _, file_list = _parse_gnome_copied_files(output)
                     if file_list:
-                        return "files", str(file_list)
+                        return "files", serialize_file_list(file_list)
                 except subprocess.CalledProcessError:
                     pass
 
@@ -202,7 +203,7 @@ class X11Clipboard(AbstractClipboard):
                     )
                     file_list = _parse_uri_list(output)
                     if file_list:
-                        return "files", str(file_list)
+                        return "files", serialize_file_list(file_list)
                 except subprocess.CalledProcessError:
                     pass
 
