@@ -47,6 +47,10 @@ DEFAULT_CONFIG = {
     "peers": {
         "auto_accept": True,
     },
+    "testing": {
+        "endpoints_enabled": False,
+        "log_key_input": False,
+    },
 }
 
 
@@ -531,6 +535,7 @@ class MonocleConfigApp(tk.Tk):
             "clipboard": dict(DEFAULT_CONFIG["clipboard"]),
             "security": dict(DEFAULT_CONFIG["security"]),
             "peers": dict(DEFAULT_CONFIG["peers"]),
+            "testing": dict(DEFAULT_CONFIG["testing"]),
         }
 
         for section, default_values in merged.items():
@@ -608,6 +613,10 @@ class MonocleConfigApp(tk.Tk):
             },
             "peers": {
                 "auto_accept": self.peers_auto_accept_var.get(),
+            },
+            "testing": {
+                "endpoints_enabled": False,
+                "log_key_input": False,
             },
         }
 

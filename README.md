@@ -79,6 +79,12 @@ sudo apt install wl-clipboard
 sudo apt install xclip
 ```
 
+On Fedora, you may also need build dependencies before `pip install` succeeds:
+
+```bash
+sudo dnf install python3-devel gcc kernel-headers wl-clipboard xclip
+```
+
 ### macOS
 ```bash
 git clone <repo>
