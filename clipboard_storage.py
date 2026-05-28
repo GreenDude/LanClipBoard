@@ -3,6 +3,7 @@
 # Licensed under the MIT License
 import os
 import platform
+import time
 from threading import RLock
 
 from datetime import UTC, datetime
@@ -55,6 +56,7 @@ class ClipboardStorage:
         self.storage_dict = dict()
         self.local_id = local_id
         self._lock = RLock()
+        self._suppress_next_local_change_until = 0.0
 
     def store_clipboard_entry(self, address: str, clip_entry: ClipboardEntry, paste_queue=None) -> bool:
         """Validate and store *clip_entry* under *address*; may enqueue for Wayland paste.
@@ -91,3 +93,16 @@ class ClipboardStorage:
             if not self.storage_dict:
                 return None
             return max(self.storage_dict.values(), key=lambda entry: entry.timestamp)
+
+    def mark_programmatic_clipboard_write(self, ttl_seconds: float = 1.5) -> None:
+        """Suppress the next clipboard poll result after LanClipboard updates the local clipboard itself."""
+        with self._lock:
+            self._suppress_next_local_change_until = time.monotonic() + ttl_seconds
+
+    def consume_programmatic_clipboard_write(self) -> bool:
+        """Return True once when a locally written clipboard update should not be rebroadcast."""
+        with self._lock:
+            if time.monotonic() <= self._suppress_next_local_change_until:
+                self._suppress_next_local_change_until = 0.0
+                return True
+            return False

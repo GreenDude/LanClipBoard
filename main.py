@@ -138,6 +138,11 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.stop_event = stop_event
 
     is_wayland = platform.system() == "Linux" and (os.environ.get("XDG_SESSION_TYPE") == "wayland")
+    poll_interval_ms = app.state.config.clipboard.poll_interval_ms
+    if is_wayland:
+        poll_interval_ms = max(poll_interval_ms, 2000)
+        if poll_interval_ms != app.state.config.clipboard.poll_interval_ms:
+            print(f"[clipboard] raised Wayland poll interval to {poll_interval_ms}ms")
 
     clipboard_thread = Thread(
         target=monitor_clipboard,
@@ -145,7 +150,7 @@ async def async_clipboard_lifespan(app: FastAPI):
               app.state.clipboard_storage,
               app.state.local_id, stop_event,
               app.state.peer_registry,
-              app.state.config.clipboard.poll_interval_ms,
+              poll_interval_ms,
               app.state.public_key_pem,
               app.state.private_key_pem,
               app.state.private_key_password,
@@ -161,6 +166,7 @@ async def async_clipboard_lifespan(app: FastAPI):
             stop_event,
             app.state.paste_queue,
             app.state.clipboard,
+            app.state.clipboard_storage,
             app.state.private_key_pem,
             app.state.public_key_pem,
             app.state.private_key_password,

@@ -38,6 +38,9 @@ def monitor_clipboard(
             if clip_value:
                 fingerprint = (clip_type, clip_value)
                 if fingerprint != last_fingerprint:
+                    if clipboard_storage.consume_programmatic_clipboard_write():
+                        last_fingerprint = fingerprint
+                        continue
                     last_fingerprint = fingerprint
 
                     entry = ClipboardEntry(

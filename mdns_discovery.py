@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 import httpx
-from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
+from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 from peer_registry import PeerRegistry
 
 
@@ -15,6 +15,7 @@ class LanClipboardDiscovery:
     """Register ``_lanclipboard._tcp`` services, browse peers, and perform HTTP handshakes."""
 
     SERVICE_TYPE = "_lanclipboard._tcp.local."
+    BROWSER_DELAY_MS = 1_000
 
     def __init__(
         self,
@@ -40,6 +41,7 @@ class LanClipboardDiscovery:
         self.peer_public_key_pem = peer_public_key_pem
 
         self.aiozc: Optional[AsyncZeroconf] = None
+        self.browser: AsyncServiceBrowser | None = None
         self.service_info = None
         self._seen = {}
         self._service_ips: dict[str, str] = {}
@@ -74,12 +76,17 @@ class LanClipboardDiscovery:
             server=f"{safe_device_name}.local.",
         )
 
+        self._loop = asyncio.get_running_loop()
+        self.browser = AsyncServiceBrowser(
+            self.aiozc.zeroconf,
+            self.SERVICE_TYPE,
+            listener=self,
+            delay=self.BROWSER_DELAY_MS,
+        )
+        print("[discovery] browser started")
+
         await self.aiozc.async_register_service(self.service_info)
         print(f"[discovery] registered {service_name} at {self.local_ip}:{self.port}")
-
-        self._loop = asyncio.get_running_loop()
-        await self.aiozc.async_add_service_listener(self.SERVICE_TYPE, self)
-        print("[discovery] browser started")
 
     async def bootstrap_handshake(self, peers: list[str] | None):
         """Shake hands with statically configured *peers* (IPs), skipping self and empty entries."""
@@ -98,6 +105,9 @@ class LanClipboardDiscovery:
     async def stop(self):
         """Stop browsing and unregister Zeroconf resources."""
         self._stopped = True
+        if self.browser is not None:
+            await self.browser.async_cancel()
+            self.browser = None
         if self.aiozc is not None:
             await self.aiozc.async_close()
         print("[discovery] stopped")
@@ -202,18 +212,31 @@ class LanClipboardDiscovery:
             "supports_encryption": self.peer_public_key_pem is not None,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                print(f"[discovery] attempting handshake with peer {ip}:{port}")
+        data = None
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            for attempt in range(1, 4):
+                try:
+                    print(f"[discovery] attempting handshake with peer {ip}:{port} (attempt {attempt})")
+                    print(f"[discovery] sending handshake to peer {ip}:{port}, \n\t{payload}")
+                    r = await client.post(url, json=payload)
 
-                print(f"[discovery] sending handshake to peer {ip}:{port}, \n\t{payload}")
-                r = await client.post(url, json=payload)
+                    r.raise_for_status()
+                    data = r.json()
+                    print(f"[discovery] handshake with peer {ip}:{port} result: {data}")
+                except Exception as e:
+                    print(f"[discovery] handshake failed with {ip}:{port}: {e}")
+                    if attempt < 3:
+                        await asyncio.sleep(1.0)
+                    continue
 
-                r.raise_for_status()
-                data = r.json()
-                print(f"[discovery] handshake with peer {ip}:{port} result: {data}")
-        except Exception as e:
-            print(f"[discovery] handshake failed with {ip}:{port}: {e}")
+                if data.get("accepted"):
+                    break
+                if data.get("reason") == "peer_not_allowed" and attempt < 3:
+                    await asyncio.sleep(1.0)
+                    continue
+                break
+
+        if data is None:
             return
 
         if not data.get("accepted"):

@@ -57,3 +57,11 @@ def test_store_wayland_skips_local_origin(monkeypatch):
     local = _entry(origin="local@10.0.0.1", platform="Linux", type="text", entry="hi")
     assert storage.store_clipboard_entry("local@10.0.0.1", local, pq) is True
     pq.put.assert_not_called()
+
+
+def test_programmatic_clipboard_write_is_consumed_once():
+    storage = ClipboardStorage("local@10.0.0.1")
+    storage.mark_programmatic_clipboard_write(ttl_seconds=1.0)
+
+    assert storage.consume_programmatic_clipboard_write() is True
+    assert storage.consume_programmatic_clipboard_write() is False

@@ -13,6 +13,7 @@ def paste_queue_handler(
     stop_event,
     paste_queue: Queue,
     clipboard_implementation: AbstractClipboard,
+    clipboard_storage,
     private_key: bytes,
     public_key: bytes,
     key_pass: bytes,
@@ -35,6 +36,7 @@ def paste_queue_handler(
             if queued_entry.type == "text":
                 print("If the entry type is text")
                 clipboard_implementation.paste_clipboard_entry(queued_entry.entry)
+                clipboard_storage.mark_programmatic_clipboard_write()
 
             elif queued_entry.type == "files":
                 print("If the entry type is files")
@@ -48,6 +50,7 @@ def paste_queue_handler(
                 )
                 if downloaded_paths:
                     clipboard_implementation.paste_clipboard_entry(downloaded_paths)
+                    clipboard_storage.mark_programmatic_clipboard_write()
 
             else:
                 print("The entry type is not supported")
