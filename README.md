@@ -58,22 +58,70 @@ For the usage guide, please refer to [USAGE.md](docs/USAGE.md)
 
 ## 📦 Installation
 
+Choose the requirements file for your OS. This project is cross-platform, but the clipboard backend dependencies are not.
+
+### Linux
 ```bash
 git clone <repo>
-cd lanclipboard
-python -m venv .venv
+cd LanClipBoard
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-linux.txt
+```
+
+Linux also needs clipboard tools installed on the system:
+
+```bash
+# Wayland
+sudo apt install wl-clipboard
+
+# X11
+sudo apt install xclip
+```
+
+### macOS
+```bash
+git clone <repo>
+cd LanClipBoard
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-macos.txt
+```
+
+### Windows
+```powershell
+git clone <repo>
+cd LanClipBoard
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-windows.txt
+```
+
+For tests, install your OS-specific requirements first, then:
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ---
 
 ## ▶️ Usage
 
+The app is served through `uvicorn`, not `python main.py`.
+
+### Start the server
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+### Optional config UI
+If you want to edit `config/config.yaml` and launch the server from a GUI:
+
 ```bash
 python config_ui.py
-python main.py
 ```
+
+The config UI starts `uvicorn main:app` under the hood.
 
 ---
 
@@ -108,8 +156,11 @@ POST /api/handshake
 ```http
 POST /api/clipboard_entry
 {
+  "origin": "Linux@192.168.1.10",
+  "platform": "Linux",
   "type": "text",
-  "content": "Hello world"
+  "entry": "Hello world",
+  "timestamp": "2026-05-28T12:00:00Z"
 }
 ```
 
@@ -117,7 +168,7 @@ POST /api/clipboard_entry
 ```http
 POST /api/file
 {
-  "path": "/tmp/file.txt"
+  "path": "/absolute/path/to/shared-file.txt"
 }
 ```
 # Planned Features

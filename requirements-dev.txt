@@ -1,2 +1,2 @@
--r requirements.txt
+# Install one OS-specific requirements file first, then this one.
 pytest>=8.0.0
