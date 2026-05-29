@@ -72,3 +72,16 @@ class PeerRegistry:
     def get_authorized_ips(self) -> list[str]:
         with self._lock:
             return list(self._authorized_by_ip.keys())
+
+    def get_candidate_ips(self) -> list[str]:
+        with self._lock:
+            return list(self._candidates)
+
+    def debug_snapshot(self) -> dict[str, object]:
+        with self._lock:
+            return {
+                "auto_accept": self.auto_accept,
+                "candidates": sorted(self._candidates),
+                "authorized_ips": sorted(self._authorized_by_ip.keys()),
+                "authorized_device_ids": sorted(self._authorized_by_device_id.keys()),
+            }

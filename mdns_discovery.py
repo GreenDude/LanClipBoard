@@ -3,6 +3,7 @@
 # Licensed under the MIT License
 import asyncio
 import socket
+import threading
 import time
 from typing import Optional
 
@@ -50,7 +51,7 @@ class LanClipboardDiscovery:
 
     async def start(self):
         """Bind Zeroconf to *local_ip*, publish this service, and subscribe to peer updates."""
-        from zeroconf import IPVersion, ServiceInfo
+        from zeroconf import IPVersion, InterfaceChoice, ServiceInfo
 
         safe_device_name = self.device_name.removesuffix(".local")
         service_name = f"{safe_device_name}.{self.SERVICE_TYPE}"
@@ -63,8 +64,14 @@ class LanClipboardDiscovery:
         }
 
         self.aiozc = AsyncZeroconf(
-            interfaces=[self.local_ip],
+            interfaces=InterfaceChoice.All,
             ip_version=IPVersion.V4Only,
+        )
+        print(
+            "[discovery] start "
+            f"local_id={self.local_id} local_ip={self.local_ip} device_name={safe_device_name} "
+            f"port={self.port} auto_accept={self.peer_registry.auto_accept} "
+            "zeroconf_interfaces=All zeroconf_ip_version=V4Only"
         )
 
         self.service_info = ServiceInfo(
@@ -83,10 +90,16 @@ class LanClipboardDiscovery:
             listener=self,
             delay=self.BROWSER_DELAY_MS,
         )
-        print("[discovery] browser started")
+        print(
+            f"[discovery] browser started service_type={self.SERVICE_TYPE} delay_ms={self.BROWSER_DELAY_MS} "
+            f"thread={threading.current_thread().name}"
+        )
 
         await self.aiozc.async_register_service(self.service_info)
-        print(f"[discovery] registered {service_name} at {self.local_ip}:{self.port}")
+        print(
+            f"[discovery] registered {service_name} at {self.local_ip}:{self.port} "
+            f"props={properties}"
+        )
 
     async def bootstrap_handshake(self, peers: list[str] | None):
         """Shake hands with statically configured *peers* (IPs), skipping self and empty entries."""
@@ -99,7 +112,10 @@ class LanClipboardDiscovery:
                 continue
 
             self.peer_registry.mark_candidate(ip)
-            print(f"[discovery] bootstrap handshake with {ip}:{self.port}")
+            print(
+                f"[discovery] bootstrap handshake with {ip}:{self.port} "
+                f"registry={self.peer_registry.debug_snapshot()}"
+            )
             await self._handshake_with_peer(ip, self.port)
 
     async def stop(self):
@@ -117,8 +133,16 @@ class LanClipboardDiscovery:
     def _schedule_service_update(self, service_type: str, name: str) -> None:
         """Run :meth:`handle_service_update` on the asyncio loop from a Zeroconf thread."""
         if self._loop is None or self._stopped:
+            print(
+                f"[discovery] skipped scheduling update name={name} stopped={self._stopped} "
+                f"loop_ready={self._loop is not None}"
+            )
             return
         try:
+            print(
+                f"[discovery] scheduling service update name={name} type={service_type} "
+                f"from_thread={threading.current_thread().name}"
+            )
             asyncio.run_coroutine_threadsafe(
                 self.handle_service_update(service_type, name),
                 self._loop,
@@ -142,13 +166,17 @@ class LanClipboardDiscovery:
         ip = self._service_ips.pop(name, None)
         if ip is not None:
             self.peer_registry.revoke_ip(ip)
+            print(f"[discovery] revoked peer ip={ip} registry={self.peer_registry.debug_snapshot()}")
 
     async def handle_service_update(self, service_type: str, name: str):
         """Resolve a service, rate-limit by *device_id*, and invoke :meth:`_handshake_with_peer`."""
         if self._stopped or self.aiozc is None:
             return
 
-        print(f"[discovery] service update: {name}")
+        print(
+            f"[discovery] service update: {name} "
+            f"registry_before={self.peer_registry.debug_snapshot()}"
+        )
 
         info = AsyncServiceInfo(service_type, name)
         ok = await info.async_request(self.aiozc.zeroconf, timeout=3000)
@@ -192,10 +220,17 @@ class LanClipboardDiscovery:
         now = time.time()
         last_seen = self._seen.get(remote_id, 0)
         if now - last_seen < 5:
+            print(
+                f"[discovery] rate-limited peer remote_id={remote_id} ip={ip} "
+                f"last_seen_delta={now - last_seen:.2f}s"
+            )
             return
         self._seen[remote_id] = now
 
-        print(f"[discovery] found peer {remote_id} at {ip}:{port}")
+        print(
+            f"[discovery] found peer {remote_id} at {ip}:{port} "
+            f"registry_after_candidate={self.peer_registry.debug_snapshot()}"
+        )
         await self._handshake_with_peer(ip, port)
 
     async def _handshake_with_peer(self, ip: str, port: int):
@@ -250,7 +285,7 @@ class LanClipboardDiscovery:
             platform=data.get("platform", ""),
             port=port,
         )
-        print(f"[discovery] added peer {ip} to peer registry")
+        print(f"[discovery] added peer {ip} to peer registry registry={self.peer_registry.debug_snapshot()}")
 
         print(
             f"[discovery] handshake accepted by "

@@ -251,6 +251,24 @@ def build_rest_router():
         """Redirect browsers to OpenAPI docs."""
         return responses.RedirectResponse("/docs")
 
+    @rest_router.get("/health")
+    async def get_health(request: Request):
+        """Return lightweight node/debug state when testing endpoints are enabled."""
+        if not request.app.state.testing_endpoints_enabled:
+            raise HTTPException(status_code=403, detail="Endpoint disabled")
+
+        registry = request.app.state.peer_registry
+        return {
+            "status": "ok",
+            "device_id": request.app.state.local_id,
+            "device_name": request.app.state.device_name,
+            "platform": platform.system(),
+            "local_ip": request.app.state.local_ip,
+            "authorized_peers": registry.get_authorized_ips(),
+            "peer_registry": registry.debug_snapshot(),
+            "security_enabled": request.app.state.private_key_pem is not None,
+        }
+
     @rest_router.post("/handshake", response_model=HandshakeResponse)
     async def handshake(request: Request):
         """Accept a peer handshake; may register the caller's IP in :attr:`app.state.peer_list`."""
@@ -264,8 +282,15 @@ def build_rest_router():
         peer_registry = request.app.state.peer_registry
 
         remote_ip = request.client.host
+        print(
+            "[handshake] inbound "
+            f"remote_ip={remote_ip} device_id={req.device_id} device_name={req.device_name} "
+            f"platform={req.platform} protocol={req.protocol_version} "
+            f"registry_before={peer_registry.debug_snapshot()}"
+        )
 
         if req.device_id == local_id:
+            print(f"[handshake] rejected self remote_ip={remote_ip} local_id={local_id}")
             return HandshakeResponse(
                 accepted=False,
                 reason="self",
@@ -279,6 +304,10 @@ def build_rest_router():
             )
 
         if req.protocol_version != 1:
+            print(
+                f"[handshake] rejected protocol_mismatch remote_ip={remote_ip} "
+                f"remote_protocol={req.protocol_version} local_protocol=1"
+            )
             return HandshakeResponse(
                 accepted=False,
                 reason="protocol_mismatch",
@@ -292,6 +321,10 @@ def build_rest_router():
             )
 
         if not peer_registry.can_accept(remote_ip):
+            print(
+                f"[handshake] rejected peer_not_allowed remote_ip={remote_ip} "
+                f"registry={peer_registry.debug_snapshot()}"
+            )
             return HandshakeResponse(
                 accepted=False,
                 reason="peer_not_allowed",
@@ -309,6 +342,10 @@ def build_rest_router():
             device_id=req.device_id,
             device_name=req.device_name,
             platform=req.platform,
+        )
+        print(
+            f"[handshake] accepted remote_ip={remote_ip} remote_device_id={req.device_id} "
+            f"registry_after={peer_registry.debug_snapshot()}"
         )
 
         return HandshakeResponse(

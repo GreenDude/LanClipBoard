@@ -111,6 +111,14 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.local_id = platform.system() + "@" + app.state.local_ip
     app.state.peer_registry = PeerRegistry(auto_accept=app.state.config.peers.auto_accept)
     app.state.shared_file_registry = SharedFileRegistry()
+    print(
+        "[startup] "
+        f"local_id={app.state.local_id} device_name={device_name} "
+        f"platform={platform.system()} local_ip={app.state.local_ip} port={port} "
+        f"discovery_enabled={app.state.config.network.discovery} "
+        f"bootstrap_peers={app.state.config.network.bootstrap_peers} "
+        f"auto_accept={app.state.config.peers.auto_accept}"
+    )
 
     app.state.clipboard_storage = ClipboardStorage(app.state.local_id)
     app.state.clipboard = get_clipboard()
@@ -143,6 +151,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         poll_interval_ms = max(poll_interval_ms, 2000)
         if poll_interval_ms != app.state.config.clipboard.poll_interval_ms:
             print(f"[clipboard] raised Wayland poll interval to {poll_interval_ms}ms")
+    print(f"[clipboard] session_type={os.environ.get('XDG_SESSION_TYPE')} effective_poll_interval_ms={poll_interval_ms}")
 
     clipboard_thread = Thread(
         target=monitor_clipboard,
