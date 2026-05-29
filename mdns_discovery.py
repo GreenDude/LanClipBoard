@@ -46,6 +46,8 @@ class LanClipboardDiscovery:
         self.service_info = None
         self._seen = {}
         self._service_ips: dict[str, str] = {}
+        self._remote_service_seen = False
+        self._discovery_hint_task: asyncio.Task | None = None
         self._stopped = False
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -100,6 +102,7 @@ class LanClipboardDiscovery:
             f"[discovery] registered {service_name} at {self.local_ip}:{self.port} "
             f"props={properties}"
         )
+        self._discovery_hint_task = asyncio.create_task(self._log_discovery_hint())
 
     async def bootstrap_handshake(self, peers: list[str] | None):
         """Shake hands with statically configured *peers* (IPs), skipping self and empty entries."""
@@ -121,6 +124,9 @@ class LanClipboardDiscovery:
     async def stop(self):
         """Stop browsing and unregister Zeroconf resources."""
         self._stopped = True
+        if self._discovery_hint_task is not None:
+            self._discovery_hint_task.cancel()
+            self._discovery_hint_task = None
         if self.browser is not None:
             await self.browser.async_cancel()
             self.browser = None
@@ -200,6 +206,7 @@ class LanClipboardDiscovery:
         if remote_id == self.local_id:
             print(f"[discovery] ignoring self: {remote_id}")
             return
+        self._remote_service_seen = True
 
         addresses = info.parsed_addresses()
         # TODO: Add IPV6 support
@@ -232,6 +239,28 @@ class LanClipboardDiscovery:
             f"registry_after_candidate={self.peer_registry.debug_snapshot()}"
         )
         await self._handshake_with_peer(ip, port)
+
+    async def _log_discovery_hint(self) -> None:
+        """Emit a one-shot hint when mDNS does not reveal any remote peers after startup."""
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            return
+
+        if self._stopped:
+            return
+
+        if self._remote_service_seen:
+            return
+
+        if self.peer_registry.get_authorized_ips():
+            return
+
+        print(
+            "[discovery] no remote mDNS services detected after startup. "
+            "Discovery may be blocked by the local network, firewall, Avahi/Bonjour, or multicast filtering. "
+            "Set network.bootstrap_peers in config/config.yaml for a reliable cross-platform fallback."
+        )
 
     async def _handshake_with_peer(self, ip: str, port: int):
         """POST plaintext JSON to the peer's handshake endpoint and maybe append *ip* to *peer_list*."""

@@ -21,7 +21,7 @@ It allows you to:
 
 - Clipboard sync across devices
 - File transfer over LAN
-- Peer discovery (mDNS)
+- Peer discovery (mDNS, best-effort)
 - Hotkey-triggered paste
 - Optional encryption (JWE + Fernet)
 - GUI configuration tool
@@ -129,6 +129,23 @@ python config_ui.py
 
 The config UI starts `uvicorn main:app` under the hood.
 
+### Recommended multi-device setup
+
+On mixed macOS/Linux/Windows networks, treat mDNS discovery as best-effort and prefer static bootstrap peers for reliability.
+
+Example [config/config.yaml](/Users/cloudraccoon/PycharmProjects/LanClipBoard/config/config.yaml):
+
+```yaml
+network:
+  port: 8000
+  discovery: true
+  bootstrap_peers:
+    - 192.168.0.1
+    - 192.168.0.2
+```
+
+Each machine should list the other devices it should proactively handshake with. mDNS can still stay enabled, but `bootstrap_peers` is the more dependable path when multicast discovery is flaky.
+
 ---
 
 ## ⌨️ Default Shortcuts
@@ -148,6 +165,15 @@ The config UI starts `uvicorn main:app` under the hood.
 - Designed for trusted LAN environments
 
 For more details please refer to [SECURITY.md](docs/SECURITY.md)
+
+---
+
+## 🔎 Discovery Notes
+
+- mDNS works best on simple home LANs with multicast fully enabled.
+- On Fedora and other Linux distributions, discovery may require `avahi-daemon` and firewall rules for `mdns`.
+- On some Wi-Fi networks, routers or APs filter multicast/Bonjour traffic between clients.
+- If devices can reach each other over HTTP but do not discover each other automatically, use `network.bootstrap_peers`.
 
 ---
 

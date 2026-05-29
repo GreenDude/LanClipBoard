@@ -19,5 +19,5 @@ security:
 peers:
   auto_accept: true
 testing:
-  endpoints_enabled: false
+  endpoints_enabled: true
   log_key_input: false
