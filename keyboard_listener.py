@@ -24,6 +24,7 @@ _LLKHF_INJECTED = 0x10
 _VK_SHIFT = 0x10
 _VK_CONTROL = 0x11
 _VK_MENU = 0x12
+_VK_INSERT = 0x2D
 _VK_LWIN = 0x5B
 _VK_RWIN = 0x5C
 
@@ -49,6 +50,8 @@ def _parse_win32_hotkey_for_suppress(paste_hotkey: set[str]) -> tuple[set[str], 
             mods.add("alt_gr")
         elif token in ("Key.cmd", "Key.cmd_l", "Key.cmd_r"):
             mods.add("cmd")
+        elif token == "Key.insert":
+            vks.add(_VK_INSERT)
         elif len(token) == 1 and token.isalpha():
             vks.add(ord(token.upper()))
     return mods, vks

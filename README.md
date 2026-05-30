@@ -152,9 +152,11 @@ Each machine should list the other devices it should proactively handshake with.
 
 | OS        | Shortcut            |
 |----------|--------------------|
-| Windows  | Ctrl + Shift + V   |
+| Windows  | Ctrl + Shift + Insert |
 | macOS    | Cmd + Shift + V    |
 | Wayland  | Ctrl + V           |
+
+On Windows, `Ctrl + Shift + V` is not a reliable default because many applications and the platform input stack may intercept it before the listener sees a complete chord. LanClipboard uses `Ctrl + Shift + Insert` by default instead.
 
 ---
 

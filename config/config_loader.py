@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 def default_paste_hotkey() -> list[str]:
     if platform.system() == "Darwin":
         return ["Key.cmd", "Key.shift", "v"]
+    if platform.system() == "Windows":
+        return ["Key.ctrl", "Key.shift", "Key.insert"]
     return ["Key.ctrl", "Key.shift", "v"]
 
 

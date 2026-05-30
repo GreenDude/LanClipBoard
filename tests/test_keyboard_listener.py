@@ -16,6 +16,12 @@ def test_parse_win32_hotkey_preserves_cmd_alt():
     assert vks == {0x58}
 
 
+def test_parse_win32_hotkey_supports_insert():
+    mods, vks = _parse_win32_hotkey_for_suppress({"Key.ctrl", "Key.shift", "Key.insert"})
+    assert mods == {"ctrl", "shift"}
+    assert vks == {0x2D}
+
+
 def test_sync_win32_modifier_tokens_adds_and_removes(monkeypatch):
     states = {
         0x11: True,   # ctrl

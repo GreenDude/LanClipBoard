@@ -37,3 +37,4 @@ network:
 - If security is enabled, ensure that the same key archive is used across Lan Clipboard instances
 - Wayland clipboard sync may run into issues. To fix that, try restarting (via stop and start buttons in the configurator)
 - If mDNS discovery does not find peers, verify Avahi/Bonjour and use `bootstrap_peers` instead of relying on multicast discovery alone.
+- On Windows, prefer `Ctrl + Shift + Insert` over `Ctrl + Shift + V`. The `Ctrl + Shift + V` chord is not reliably delivered to the global keyboard listener on all systems/apps.
