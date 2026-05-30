@@ -27,6 +27,14 @@ _VK_MENU = 0x12
 _VK_INSERT = 0x2D
 _VK_LWIN = 0x5B
 _VK_RWIN = 0x5C
+_VK_TOKEN_MAP = {
+    _VK_SHIFT: "Key.shift",
+    _VK_CONTROL: "Key.ctrl",
+    _VK_MENU: "Key.alt",
+    _VK_INSERT: "Key.insert",
+    _VK_LWIN: "Key.cmd",
+    _VK_RWIN: "Key.cmd",
+}
 
 
 def _win32_get_key_state(vk: int) -> bool:
@@ -93,6 +101,7 @@ def _sync_win32_modifier_tokens(pressed: set[str]) -> set[str]:
 def _make_win32_suppress_hotkey_filter(
     paste_hotkey: set[str],
     listener_ref: list,
+    trigger_hotkey_match: Callable[[], None],
 ) -> Callable:
     """Return a ``win32_event_filter`` that swallows the real chord but not pynput-injected keys."""
     required_mods, trigger_vks = _parse_win32_hotkey_for_suppress(paste_hotkey)
@@ -110,6 +119,7 @@ def _make_win32_suppress_hotkey_filter(
             return True
         if not _win32_modifiers_satisfied(required_mods):
             return True
+        trigger_hotkey_match()
         listener_ref[0].suppress_event()
         return True
 
@@ -118,6 +128,14 @@ def _make_win32_suppress_hotkey_filter(
 
 def normalize_key(key) -> str:
     """Map a pynput *key* to a lowercase token comparable to configured hotkey strings."""
+    vk = getattr(key, "vk", None)
+    if isinstance(vk, int):
+        token = _VK_TOKEN_MAP.get(vk)
+        if token:
+            return token
+        if 65 <= vk <= 90:  # A-Z
+            return chr(vk).lower()
+
     if hasattr(key, "char") and key.char:
         if len(key.char) == 1 and 1 <= ord(key.char) <= 26:
             return chr(ord(key.char) + 96)
@@ -154,9 +172,23 @@ def monitor_keyboard(
     pressed = set()
     combo_active = False
 
+    def trigger_hotkey_match(source: str, pressed_snapshot: set[str] | None = None) -> None:
+        """Enqueue the latest clipboard snapshot once per completed hotkey chord."""
+        nonlocal combo_active
+        if combo_active:
+            return
+        paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
+        combo_active = True
+        if log_key_input:
+            logger.info(
+                "[keyboard] hotkey matched source=%s pressed=%s queue_size=%s",
+                source,
+                pressed_snapshot if pressed_snapshot is not None else pressed,
+                paste_queue.qsize(),
+            )
+
     def on_press(key):
         """Track keys and enqueue the latest clipboard snapshot when the hotkey chord completes."""
-        nonlocal combo_active
         k = normalize_key(key)
 
         pressed.add(k)
@@ -165,11 +197,8 @@ def monitor_keyboard(
         if log_key_input:
             logger.info("[keyboard] pressed=%s hotkey=%s", pressed, paste_hotkey)
 
-        if paste_hotkey <= pressed and not combo_active:
-            paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
-            combo_active = True
-            if log_key_input:
-                logger.info("[keyboard] hotkey matched pressed=%s queue_size=%s", pressed, paste_queue.qsize())
+        if paste_hotkey <= pressed:
+            trigger_hotkey_match("listener", pressed.copy())
 
     def on_release(key):
         """Drop released keys and allow the chord to retrigger once modifiers change."""
@@ -187,6 +216,7 @@ def monitor_keyboard(
         listener_kwargs["win32_event_filter"] = _make_win32_suppress_hotkey_filter(
             paste_hotkey,
             listener_ref,
+            lambda: trigger_hotkey_match("win32_filter"),
         )
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release, **listener_kwargs)

@@ -19,11 +19,9 @@ import sys
 import security_services
 
 def get_default_paste_hotkey() -> list[str]:
-    """Default paste chord: Cmd+Shift+V on macOS, Ctrl+Shift+Insert on Windows, Ctrl+Shift+V elsewhere."""
+    """Default paste chord: Cmd+Shift+V on macOS, Ctrl+Shift+V elsewhere."""
     if platform.system() == "Darwin":
         return ["Key.cmd", "Key.shift", "v"]
-    if platform.system() == "Windows":
-        return ["Key.ctrl", "Key.shift", "Key.insert"]
     return ["Key.ctrl", "Key.shift", "v"]
 
 
