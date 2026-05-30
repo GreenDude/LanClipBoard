@@ -282,15 +282,19 @@ def build_rest_router():
         peer_registry = request.app.state.peer_registry
 
         remote_ip = request.client.host
-        print(
+        logger.info(
             "[handshake] inbound "
-            f"remote_ip={remote_ip} device_id={req.device_id} device_name={req.device_name} "
-            f"platform={req.platform} protocol={req.protocol_version} "
-            f"registry_before={peer_registry.debug_snapshot()}"
+            "remote_ip=%s device_id=%s device_name=%s platform=%s protocol=%s registry_before=%s",
+            remote_ip,
+            req.device_id,
+            req.device_name,
+            req.platform,
+            req.protocol_version,
+            peer_registry.debug_snapshot(),
         )
 
         if req.device_id == local_id:
-            print(f"[handshake] rejected self remote_ip={remote_ip} local_id={local_id}")
+            logger.info("[handshake] rejected self remote_ip=%s local_id=%s", remote_ip, local_id)
             return HandshakeResponse(
                 accepted=False,
                 reason="self",
@@ -304,9 +308,10 @@ def build_rest_router():
             )
 
         if req.protocol_version != 1:
-            print(
-                f"[handshake] rejected protocol_mismatch remote_ip={remote_ip} "
-                f"remote_protocol={req.protocol_version} local_protocol=1"
+            logger.warning(
+                "[handshake] rejected protocol_mismatch remote_ip=%s remote_protocol=%s local_protocol=1",
+                remote_ip,
+                req.protocol_version,
             )
             return HandshakeResponse(
                 accepted=False,
@@ -321,9 +326,10 @@ def build_rest_router():
             )
 
         if not peer_registry.can_accept(remote_ip):
-            print(
-                f"[handshake] rejected peer_not_allowed remote_ip={remote_ip} "
-                f"registry={peer_registry.debug_snapshot()}"
+            logger.warning(
+                "[handshake] rejected peer_not_allowed remote_ip=%s registry=%s",
+                remote_ip,
+                peer_registry.debug_snapshot(),
             )
             return HandshakeResponse(
                 accepted=False,
@@ -343,9 +349,11 @@ def build_rest_router():
             device_name=req.device_name,
             platform=req.platform,
         )
-        print(
-            f"[handshake] accepted remote_ip={remote_ip} remote_device_id={req.device_id} "
-            f"registry_after={peer_registry.debug_snapshot()}"
+        logger.info(
+            "[handshake] accepted remote_ip=%s remote_device_id=%s registry_after=%s",
+            remote_ip,
+            req.device_id,
+            peer_registry.debug_snapshot(),
         )
 
         return HandshakeResponse(
@@ -504,19 +512,19 @@ def broadcast_to_peers(
                 if private_key_pem is not None:
                     try:
                         response_json = r.json()
-                        print(f"Received a response from {ip} with body \n\t{response_json}")
+                        logger.debug("Received a response from %s with body %s", ip, response_json)
                         if "encrypted_jwt" in response_json:
                             decrypted_response = security_services.decrypt_text(
                                 private_key=private_key_pem,
                                 encrypted_jwt=response_json["encrypted_jwt"],
                                 password=private_key_password,
                             )
-                            print(f"[broadcast] decrypted response from {ip}: {decrypted_response}")
-                    except Exception as e:
-                        print(f"[broadcast] failed to decrypt response from {ip}: {e}")
+                            logger.debug("[broadcast] decrypted response from %s: %s", ip, decrypted_response)
+                    except Exception:
+                        logger.exception("[broadcast] failed to decrypt response from %s", ip)
 
-            except Exception as e:
-                print(f"[broadcast] failed to send to {ip}: {e}")
+            except Exception:
+                logger.exception("[broadcast] failed to send to %s", ip)
 
 
 def get_files(
@@ -551,7 +559,8 @@ def get_files(
                 else:
                     payload = _try_encrypt_body(json_body.model_dump(mode="json"),
                                             public_key)
-                print(f"Requesting \n\t{json_body}\n\n{payload}\n\n\n")
+                logger.info("[file request] requesting %s from %s", json_body.path, ip)
+                logger.debug("[file request] payload=%s", payload)
                 with client.stream("POST", url, json=payload) as r:
                     r.raise_for_status()
 
@@ -566,16 +575,16 @@ def get_files(
                             downloaded_name = file_name
 
                     temp_file = temp_dir / downloaded_name
-                    print(f"Saving {file_name} to {temp_file}")
+                    logger.info("[file request] saving %s to %s", file_name, temp_file)
 
                     with open(temp_file, "wb") as f:
                         chunk_num = 0
                         for chunk in r.iter_bytes(chunk_size=CHUNK_SIZE):
                             chunk_num += 1
-                            print(f"Saving chunk # {chunk_num}")
+                            logger.debug("[file request] saving chunk #%s", chunk_num)
                             f.write(chunk)
 
-                    print(f"File {file_name} saved")
+                    logger.info("[file request] file %s saved", file_name)
                     if temp_file.suffix == ".enc":
                         decrypted_file_path = security_services.decrypt_file(
                             private_key,
@@ -590,7 +599,7 @@ def get_files(
                             raise ValueError(f"Failed to decrypt downloaded file: {temp_file}")
                     else:
                         downloaded_paths.append(str(temp_file))
-        except Exception as e:
-            print(f"[file request] failed to receive from {ip}: {e}")
+        except Exception:
+            logger.exception("[file request] failed to receive from %s", ip)
 
     return downloaded_paths

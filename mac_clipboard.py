@@ -1,11 +1,14 @@
 """macOS clipboard via PyObjC ``NSPasteboard``."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
+import logging
 import AppKit
 from Foundation import NSURL
 from abstract_clipboard import AbstractClipboard
 from clipboard_payloads import serialize_file_list
 from pynput import keyboard
+
+logger = logging.getLogger(__name__)
 
 TEXT_TYPES = [
     "public.utf8-plain-text",
@@ -42,7 +45,7 @@ class MacClipboard(AbstractClipboard):
         """Write *entry* to the pasteboard and simulate Cmd+V."""
         pb = AppKit.NSPasteboard.generalPasteboard()
 
-        print(f"Attempting to paste {entry}, which is a {type(entry)}")
+        logger.info("Attempting to paste %s, which is a %s", entry, type(entry))
 
         if isinstance(entry, str):
             pb.clearContents()
@@ -54,13 +57,13 @@ class MacClipboard(AbstractClipboard):
             pb_updated = pb.writeObjects_(urls)
 
         else:
-            print(f"Unsupported entry type: {type(entry)}")
+            logger.warning("Unsupported entry type: %s", type(entry))
             return
 
         if pb_updated:
-            print(f"Successfully updated {entry}")
+            logger.info("Successfully updated %s", entry)
             with self.keyboard_controller.pressed(keyboard.Key.cmd):
                 self.keyboard_controller.press('v')
                 self.keyboard_controller.release('v')
         else:
-            print(f"Failed to paste {entry}")
+            logger.warning("Failed to paste %s", entry)

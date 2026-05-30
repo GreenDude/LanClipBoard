@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import shutil
@@ -16,6 +17,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from jwcrypto import jwe, jwk
+
+logger = logging.getLogger(__name__)
 
 
 def generate_key_pair(
@@ -227,7 +230,7 @@ def decrypt_file(
 ) -> str | None:
     """Inverse of :func:`encrypt_file`; writes plaintext next to the ``.enc`` file and returns that path."""
     with open(encrypted_file_path, "rb") as f:
-        print(f"Attempting to decrypt: {encrypted_file_path}")
+        logger.info("Attempting to decrypt: %s", encrypted_file_path)
         key_length = int.from_bytes(f.read(4), 'big')
         encrypted_file_key = f.read(key_length)
         encrypted_data = f.read()

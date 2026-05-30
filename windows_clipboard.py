@@ -1,6 +1,7 @@
 """Windows clipboard via ``pywin32`` and optional synthetic Ctrl+V."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
+import logging
 import os
 import struct
 import time
@@ -12,6 +13,8 @@ from pynput import keyboard
 
 from abstract_clipboard import AbstractClipboard
 from clipboard_payloads import serialize_file_list
+
+logger = logging.getLogger(__name__)
 
 
 class WindowsClipboard(AbstractClipboard):
@@ -51,10 +54,10 @@ class WindowsClipboard(AbstractClipboard):
 
     def paste_clipboard_entry(self, entry):
         """Set clipboard content then send Ctrl+V when the update succeeds."""
-        print(f"Attempting to paste {entry}, which is a {type(entry)}")
+        logger.info("Attempting to paste %s, which is a %s", entry, type(entry))
 
         if not self.open_clipboard_safely():
-            print("Failed to open clipboard")
+            logger.warning("Failed to open clipboard")
             return
 
         try:
@@ -67,7 +70,7 @@ class WindowsClipboard(AbstractClipboard):
             elif isinstance(entry, list):
                 paths = [os.path.normpath(p) for p in entry if p]
                 if not paths:
-                    print("No valid file paths to paste")
+                    logger.warning("No valid file paths to paste")
                     clipboard_updated = False
                 else:
                     # CF_HDROP expects a DROPFILES struct followed by a UTF-16LE
@@ -79,14 +82,14 @@ class WindowsClipboard(AbstractClipboard):
                     clipboard_updated = True
 
             else:
-                print(f"Unsupported entry type: {type(entry)}")
+                logger.warning("Unsupported entry type: %s", type(entry))
                 clipboard_updated = False
 
         finally:
             win32clipboard.CloseClipboard()
 
         if clipboard_updated:
-            print(f"Successfully updated clipboard with {entry}")
+            logger.info("Successfully updated clipboard with %s", entry)
 
             time.sleep(0.05)  # allow clipboard to settle
 
@@ -95,4 +98,4 @@ class WindowsClipboard(AbstractClipboard):
                 self.keyboard_controller.release('v')
 
         else:
-            print(f"Failed to paste {entry}")
+            logger.warning("Failed to paste %s", entry)

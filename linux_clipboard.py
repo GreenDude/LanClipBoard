@@ -1,6 +1,7 @@
 """Linux clipboard via ``wl-clipboard`` (Wayland) or ``xclip`` (X11)."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -8,6 +9,8 @@ from urllib.parse import quote, unquote, urlparse
 
 from abstract_clipboard import AbstractClipboard
 from clipboard_payloads import serialize_file_list
+
+logger = logging.getLogger(__name__)
 
 
 def get_linux_clipboard():
@@ -70,9 +73,9 @@ class WaylandClipboard(AbstractClipboard):
             list_of_types = [entry_type.strip() for entry_type in types.splitlines() if entry_type.strip()]
             # print (f"Recorded types: \n {list_of_types}")
         except subprocess.CalledProcessError as e:
-            print(f"{e.cmd} threw an exception: \n\t{e.returncode}\n\t{e.output}")
+            logger.warning("%s failed returncode=%s output=%s", e.cmd, e.returncode, e.output)
         except FileNotFoundError:
-            print("wl-paste not found")
+            logger.warning("wl-paste not found")
             return "unknown"
 
         if "x-special/gnome-copied-files" in list_of_types or "text/uri-list" in list_of_types:
@@ -107,13 +110,13 @@ class WaylandClipboard(AbstractClipboard):
         except subprocess.CalledProcessError:
             pass
         except FileNotFoundError:
-            print("wl-paste not found")
+            logger.warning("wl-paste not found")
 
         return "empty", None
 
     def paste_clipboard_entry(self, entry):
         """Push *entry* to the clipboard using ``wl-copy``."""
-        print(f"Attempting to paste {entry}, which is a {type(entry)}")
+        logger.info("Attempting to paste %s, which is a %s", entry, type(entry))
 
         if isinstance(entry, str):
             proc = subprocess.Popen(
@@ -124,9 +127,9 @@ class WaylandClipboard(AbstractClipboard):
             proc.communicate(entry)
 
             if proc.returncode == 0:
-                print(f"Successfully updated clipboard with text: {entry}")
+                logger.info("Successfully updated clipboard with text: %s", entry)
             else:
-                print(f"Failed to paste {entry}")
+                logger.warning("Failed to paste %s", entry)
             return
 
         if isinstance(entry, list):
@@ -142,12 +145,12 @@ class WaylandClipboard(AbstractClipboard):
             proc.communicate(uri_list)
 
             if proc.returncode == 0:
-                print(f"Successfully updated clipboard with files: {entry}")
+                logger.info("Successfully updated clipboard with files: %s", entry)
             else:
-                print(f"Failed to paste {entry}")
+                logger.warning("Failed to paste %s", entry)
             return
 
-        print(f"Unsupported entry type: {type(entry)}")
+        logger.warning("Unsupported entry type: %s", type(entry))
         raise NotImplementedError
 
 
@@ -164,9 +167,9 @@ class X11Clipboard(AbstractClipboard):
             )
             list_of_types = [entry_type.strip() for entry_type in types.splitlines() if entry_type.strip()]
         except subprocess.CalledProcessError as e:
-            print(f"{e.cmd} threw an exception: \n\t{e.returncode}\n\t{e.output}")
+            logger.warning("%s failed returncode=%s output=%s", e.cmd, e.returncode, e.output)
         except FileNotFoundError:
-            print("xclip not found")
+            logger.warning("xclip not found")
             return "unknown"
 
         if "x-special/gnome-copied-files" in list_of_types or "text/uri-list" in list_of_types:
@@ -208,13 +211,13 @@ class X11Clipboard(AbstractClipboard):
                     pass
 
         except FileNotFoundError:
-            print("xclip not found")
+            logger.warning("xclip not found")
 
         return "empty", None
 
     def paste_clipboard_entry(self, entry):
         """Write *entry* to the X11 clipboard (URI list + optional gnome metadata)."""
-        print(f"Attempting to paste {entry}, which is a {type(entry)}")
+        logger.info("Attempting to paste %s, which is a %s", entry, type(entry))
 
         if isinstance(entry, str):
             subprocess.run(
@@ -223,7 +226,7 @@ class X11Clipboard(AbstractClipboard):
                 text=True,
                 check=True,
             )
-            print(f"Successfully updated clipboard with text: {entry}")
+            logger.info("Successfully updated clipboard with text: %s", entry)
             return
 
         if isinstance(entry, list):
@@ -247,8 +250,8 @@ class X11Clipboard(AbstractClipboard):
             except subprocess.CalledProcessError:
                 pass
 
-            print(f"Successfully updated clipboard with files: {entry}")
+            logger.info("Successfully updated clipboard with files: %s", entry)
             return
 
-        print(f"Unsupported entry type: {type(entry)}")
+        logger.warning("Unsupported entry type: %s", type(entry))
         raise NotImplementedError

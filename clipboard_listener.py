@@ -1,9 +1,9 @@
 """Poll the local clipboard and broadcast changes to known peers."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
+import logging
 import platform
 import time
-import traceback
 from datetime import UTC, datetime
 from threading import Event
 
@@ -13,6 +13,8 @@ from clipboard_payloads import parse_file_list
 from clipboard_storage import ClipboardEntry, ClipboardStorage
 from peer_registry import PeerRegistry
 from shared_file_registry import SharedFileRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def monitor_clipboard(
@@ -60,10 +62,7 @@ def monitor_clipboard(
                                        private_key_password  = password)
 
         except Exception:
-            print(f"Well that was unexpected {last_fingerprint}")
-            print(traceback.format_exc())
-            # Keep the thread alive; optionally log
-            pass
+            logger.exception("[clipboard] unexpected monitor error fingerprint=%s", last_fingerprint)
 
         sleep_time = poll_interval / 1000
         time.sleep(sleep_time)

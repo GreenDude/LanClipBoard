@@ -3,6 +3,7 @@
 # Licensed under the MIT License
 from __future__ import annotations
 
+import logging
 import platform
 import time
 from queue import Queue
@@ -12,6 +13,8 @@ from typing import Callable
 from pynput import keyboard
 
 from clipboard_storage import ClipboardStorage
+
+logger = logging.getLogger(__name__)
 
 # Windows low-level hook: suppress physical hotkey so the focused app does not also handle
 # Ctrl+Shift+V (etc.), which would paste once natively and again after our synthetic Ctrl+V.
@@ -138,15 +141,13 @@ def monitor_keyboard(
 
         pressed.add(k)
         if log_key_input:
-            print(pressed)
-            print(paste_hotkey)
+            logger.info("[keyboard] pressed=%s hotkey=%s", pressed, paste_hotkey)
 
         if paste_hotkey <= pressed and not combo_active:
             paste_queue.put(clipboard_storage.get_latest_clipboard_entry())
             combo_active = True
             if log_key_input:
-                print(pressed)
-                print(paste_queue.qsize())
+                logger.info("[keyboard] hotkey matched pressed=%s queue_size=%s", pressed, paste_queue.qsize())
 
     def on_release(key):
         """Drop released keys and allow the chord to retrigger once modifiers change."""

@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
 import asyncio
+import logging
 import socket
 import threading
 import time
@@ -10,6 +11,8 @@ from typing import Optional
 import httpx
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 from peer_registry import PeerRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class LanClipboardDiscovery:
@@ -69,11 +72,15 @@ class LanClipboardDiscovery:
             interfaces=InterfaceChoice.All,
             ip_version=IPVersion.V4Only,
         )
-        print(
+        logger.info(
             "[discovery] start "
-            f"local_id={self.local_id} local_ip={self.local_ip} device_name={safe_device_name} "
-            f"port={self.port} auto_accept={self.peer_registry.auto_accept} "
-            "zeroconf_interfaces=All zeroconf_ip_version=V4Only"
+            "local_id=%s local_ip=%s device_name=%s port=%s auto_accept=%s "
+            "zeroconf_interfaces=All zeroconf_ip_version=V4Only",
+            self.local_id,
+            self.local_ip,
+            safe_device_name,
+            self.port,
+            self.peer_registry.auto_accept,
         )
 
         self.service_info = ServiceInfo(
@@ -92,22 +99,27 @@ class LanClipboardDiscovery:
             listener=self,
             delay=self.BROWSER_DELAY_MS,
         )
-        print(
-            f"[discovery] browser started service_type={self.SERVICE_TYPE} delay_ms={self.BROWSER_DELAY_MS} "
-            f"thread={threading.current_thread().name}"
+        logger.info(
+            "[discovery] browser started service_type=%s delay_ms=%s thread=%s",
+            self.SERVICE_TYPE,
+            self.BROWSER_DELAY_MS,
+            threading.current_thread().name,
         )
 
         await self.aiozc.async_register_service(self.service_info)
-        print(
-            f"[discovery] registered {service_name} at {self.local_ip}:{self.port} "
-            f"props={properties}"
+        logger.info(
+            "[discovery] registered %s at %s:%s props=%s",
+            service_name,
+            self.local_ip,
+            self.port,
+            properties,
         )
         self._discovery_hint_task = asyncio.create_task(self._log_discovery_hint())
 
     async def bootstrap_handshake(self, peers: list[str] | None):
         """Shake hands with statically configured *peers* (IPs), skipping self and empty entries."""
         if not peers:
-            print("[discovery] bootstrap skipped: no peers configured")
+            logger.info("[discovery] bootstrap skipped: no peers configured")
             return
 
         for ip in peers:
@@ -115,9 +127,11 @@ class LanClipboardDiscovery:
                 continue
 
             self.peer_registry.mark_candidate(ip)
-            print(
-                f"[discovery] bootstrap handshake with {ip}:{self.port} "
-                f"registry={self.peer_registry.debug_snapshot()}"
+            logger.info(
+                "[discovery] bootstrap handshake with %s:%s registry=%s",
+                ip,
+                self.port,
+                self.peer_registry.debug_snapshot(),
             )
             await self._handshake_with_peer(ip, self.port)
 
@@ -132,62 +146,71 @@ class LanClipboardDiscovery:
             self.browser = None
         if self.aiozc is not None:
             await self.aiozc.async_close()
-        print("[discovery] stopped")
+        logger.info("[discovery] stopped")
 
     # ---- ServiceListener-style callbacks used by async_add_service_listener ----
 
     def _schedule_service_update(self, service_type: str, name: str) -> None:
         """Run :meth:`handle_service_update` on the asyncio loop from a Zeroconf thread."""
         if self._loop is None or self._stopped:
-            print(
-                f"[discovery] skipped scheduling update name={name} stopped={self._stopped} "
-                f"loop_ready={self._loop is not None}"
+            logger.info(
+                "[discovery] skipped scheduling update name=%s stopped=%s loop_ready=%s",
+                name,
+                self._stopped,
+                self._loop is not None,
             )
             return
         try:
-            print(
-                f"[discovery] scheduling service update name={name} type={service_type} "
-                f"from_thread={threading.current_thread().name}"
+            logger.info(
+                "[discovery] scheduling service update name=%s type=%s from_thread=%s",
+                name,
+                service_type,
+                threading.current_thread().name,
             )
             asyncio.run_coroutine_threadsafe(
                 self.handle_service_update(service_type, name),
                 self._loop,
             )
-        except RuntimeError as e:
-            print(f"[discovery] failed to schedule service update: {e}")
+        except RuntimeError:
+            logger.exception("[discovery] failed to schedule service update")
 
     def add_service(self, zc, service_type: str, name: str) -> None:
         """Zeroconf callback when a new instance appears."""
-        print(f"[discovery] add_service: {name}")
+        logger.info("[discovery] add_service: %s", name)
         self._schedule_service_update(service_type, name)
 
     def update_service(self, zc, service_type: str, name: str) -> None:
         """Zeroconf callback when TXT or addresses change."""
-        print(f"[discovery] update_service: {name}")
+        logger.info("[discovery] update_service: %s", name)
         self._schedule_service_update(service_type, name)
 
     def remove_service(self, zc, service_type: str, name: str) -> None:
         """Zeroconf callback when a service goes away."""
-        print(f"[discovery] remove_service: {name}")
+        logger.info("[discovery] remove_service: %s", name)
         ip = self._service_ips.pop(name, None)
         if ip is not None:
             self.peer_registry.revoke_ip(ip)
-            print(f"[discovery] revoked peer ip={ip} registry={self.peer_registry.debug_snapshot()}")
+            logger.info(
+                "[discovery] revoked peer ip=%s registry=%s",
+                ip,
+                self.peer_registry.debug_snapshot(),
+            )
 
     async def handle_service_update(self, service_type: str, name: str):
         """Resolve a service, rate-limit by *device_id*, and invoke :meth:`_handshake_with_peer`."""
         if self._stopped or self.aiozc is None:
             return
 
-        print(
-            f"[discovery] service update: {name} "
-            f"registry_before={self.peer_registry.debug_snapshot()}"
+        logger.info(
+            "[discovery] service update: %s registry_before=%s",
+            name,
+            self.peer_registry.debug_snapshot(),
         )
 
         info = AsyncServiceInfo(service_type, name)
         ok = await info.async_request(self.aiozc.zeroconf, timeout=3000)
         if not ok:
-            print(f"[discovery] no service info for {name}")
+            logger.info("[discovery] no service info for %s", name)
             return
 
         props = {
@@ -196,15 +219,15 @@ class LanClipboardDiscovery:
             for k, v in info.properties.items()
         }
 
-        print(f"[discovery] resolved props for {name}: {props}")
+        logger.info("[discovery] resolved props for %s: %s", name, props)
 
         remote_id = props.get("device_id")
         if not remote_id:
-            print(f"[discovery] ignoring {name}: no device_id")
+            logger.info("[discovery] ignoring %s: no device_id", name)
             return
 
         if remote_id == self.local_id:
-            print(f"[discovery] ignoring self: {remote_id}")
+            logger.info("[discovery] ignoring self: %s", remote_id)
             return
         self._remote_service_seen = True
 
@@ -213,7 +236,7 @@ class LanClipboardDiscovery:
         ipv4_addresses = [a for a in addresses if "." in a]
 
         if not ipv4_addresses:
-            print(f"[discovery] no IPv4 address for {name}, skipping")
+            logger.info("[discovery] no IPv4 address for %s, skipping", name)
             return
 
         ip = ipv4_addresses[0]
@@ -221,22 +244,27 @@ class LanClipboardDiscovery:
         self._service_ips[name] = ip
         self.peer_registry.mark_candidate(ip)
 
-        print(f"[discovery] all addresses: {addresses}")
-        print(f"[discovery] selected IPv4: {ip}")
+        logger.info("[discovery] all addresses: %s", addresses)
+        logger.info("[discovery] selected IPv4: %s", ip)
 
         now = time.time()
         last_seen = self._seen.get(remote_id, 0)
         if now - last_seen < 5:
-            print(
-                f"[discovery] rate-limited peer remote_id={remote_id} ip={ip} "
-                f"last_seen_delta={now - last_seen:.2f}s"
+            logger.info(
+                "[discovery] rate-limited peer remote_id=%s ip=%s last_seen_delta=%.2fs",
+                remote_id,
+                ip,
+                now - last_seen,
             )
             return
         self._seen[remote_id] = now
 
-        print(
-            f"[discovery] found peer {remote_id} at {ip}:{port} "
-            f"registry_after_candidate={self.peer_registry.debug_snapshot()}"
+        logger.info(
+            "[discovery] found peer %s at %s:%s registry_after_candidate=%s",
+            remote_id,
+            ip,
+            port,
+            self.peer_registry.debug_snapshot(),
         )
         await self._handshake_with_peer(ip, port)
 
@@ -256,7 +284,7 @@ class LanClipboardDiscovery:
         if self.peer_registry.get_authorized_ips():
             return
 
-        print(
+        logger.warning(
             "[discovery] no remote mDNS services detected after startup. "
             "Discovery may be blocked by the local network, firewall, Avahi/Bonjour, or multicast filtering. "
             "Set network.bootstrap_peers in config/config.yaml for a reliable cross-platform fallback."
@@ -280,15 +308,20 @@ class LanClipboardDiscovery:
         async with httpx.AsyncClient(timeout=3.0) as client:
             for attempt in range(1, 4):
                 try:
-                    print(f"[discovery] attempting handshake with peer {ip}:{port} (attempt {attempt})")
-                    print(f"[discovery] sending handshake to peer {ip}:{port}, \n\t{payload}")
+                    logger.info(
+                        "[discovery] attempting handshake with peer %s:%s (attempt %s)",
+                        ip,
+                        port,
+                        attempt,
+                    )
+                    logger.debug("[discovery] sending handshake to peer %s:%s payload=%s", ip, port, payload)
                     r = await client.post(url, json=payload)
 
                     r.raise_for_status()
                     data = r.json()
-                    print(f"[discovery] handshake with peer {ip}:{port} result: {data}")
-                except Exception as e:
-                    print(f"[discovery] handshake failed with {ip}:{port}: {e}")
+                    logger.info("[discovery] handshake with peer %s:%s result: %s", ip, port, data)
+                except Exception:
+                    logger.exception("[discovery] handshake failed with %s:%s", ip, port)
                     if attempt < 3:
                         await asyncio.sleep(1.0)
                     continue
@@ -304,7 +337,7 @@ class LanClipboardDiscovery:
             return
 
         if not data.get("accepted"):
-            print(f"[discovery] handshake rejected by {ip}:{port}: {data.get('reason')}")
+            logger.warning("[discovery] handshake rejected by %s:%s: %s", ip, port, data.get("reason"))
             return
 
         self.peer_registry.authorize(
@@ -314,9 +347,16 @@ class LanClipboardDiscovery:
             platform=data.get("platform", ""),
             port=port,
         )
-        print(f"[discovery] added peer {ip} to peer registry registry={self.peer_registry.debug_snapshot()}")
+        logger.info(
+            "[discovery] added peer %s to peer registry registry=%s",
+            ip,
+            self.peer_registry.debug_snapshot(),
+        )
 
-        print(
-            f"[discovery] handshake accepted by "
-            f"{data.get('device_name')} ({data.get('device_id')}) at {ip}:{port}"
+        logger.info(
+            "[discovery] handshake accepted by %s (%s) at %s:%s",
+            data.get("device_name"),
+            data.get("device_id"),
+            ip,
+            port,
         )
