@@ -6,7 +6,7 @@ import logging
 import platform
 import socket
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from queue import Queue
 from typing import Any, List, Type
 from urllib.parse import unquote
@@ -36,8 +36,11 @@ class FileRequest(BaseModel):
     @field_validator("path")
     @classmethod
     def reject_path_traversal(cls, v: str) -> str:
-        path = Path(v)
-        if ".." in path.parts or not path.is_absolute():
+        windows_path = PureWindowsPath(v)
+        posix_path = PurePosixPath(v)
+        if ".." in windows_path.parts or ".." in posix_path.parts:
+            raise ValueError("path must not contain '..' components")
+        if not (windows_path.is_absolute() or posix_path.is_absolute()):
             raise ValueError("path must not contain '..' components")
         return v
 
@@ -105,7 +108,7 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
     private_key_password = getattr(request.app.state, "private_key_password", None)
 
     security_enabled = private_key is not None
-
+    logger.info("Logging raw body: %s", raw_body)
     if security_enabled:
         try:
             encrypted_payload = EncryptedPayload.model_validate_json(raw_body)

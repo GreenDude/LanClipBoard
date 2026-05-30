@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from jwcrypto import jwe, jwk
 
 logger = logging.getLogger(__name__)
+_ENCRYPTED_FILE_MAGIC = b"LCF1"
 
 
 def generate_key_pair(
@@ -211,9 +212,13 @@ def encrypt_file(public_key: bytes, file_path: Path, output_dir: Path | None = N
     output_dir.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f"{file_path.stem}_", suffix=".enc", dir=output_dir)
     encrypted_file_path = Path(temp_name)
+    original_name_bytes = file_path.name.encode("utf-8")
     with os.fdopen(fd, "wb") as f:
+        f.write(_ENCRYPTED_FILE_MAGIC)
         f.write(len(encrypted_file_key).to_bytes(4, 'big'))  # Store key length
         f.write(encrypted_file_key)
+        f.write(len(original_name_bytes).to_bytes(2, "big"))
+        f.write(original_name_bytes)
         f.write(encrypted_data)
 
     if encrypted_file_path.exists():
@@ -231,9 +236,19 @@ def decrypt_file(
     """Inverse of :func:`encrypt_file`; writes plaintext next to the ``.enc`` file and returns that path."""
     with open(encrypted_file_path, "rb") as f:
         logger.info("Attempting to decrypt: %s", encrypted_file_path)
-        key_length = int.from_bytes(f.read(4), 'big')
-        encrypted_file_key = f.read(key_length)
-        encrypted_data = f.read()
+        magic = f.read(len(_ENCRYPTED_FILE_MAGIC))
+        if magic == _ENCRYPTED_FILE_MAGIC:
+            key_length = int.from_bytes(f.read(4), 'big')
+            encrypted_file_key = f.read(key_length)
+            name_length = int.from_bytes(f.read(2), "big")
+            original_name = f.read(name_length).decode("utf-8")
+            encrypted_data = f.read()
+        else:
+            f.seek(0)
+            key_length = int.from_bytes(f.read(4), 'big')
+            encrypted_file_key = f.read(key_length)
+            original_name = None
+            encrypted_data = f.read()
 
     rsa_private_key: rsa.RSAPrivateKey = serialization.load_pem_private_key(
         private_key,
@@ -256,7 +271,7 @@ def decrypt_file(
         output_dir = encrypted_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    decrypted_name = encrypted_path.name.removesuffix(".enc")
+    decrypted_name = original_name or encrypted_path.name.removesuffix(".enc")
     decrypted_file_path = output_dir / decrypted_name
 
     with open(decrypted_file_path, "wb") as f:

@@ -12,6 +12,11 @@ from clipboard_storage import ClipboardEntry
 logger = logging.getLogger(__name__)
 
 
+def _entry_origin_is_local(queued_entry: ClipboardEntry, clipboard_storage) -> bool:
+    """Return True when *queued_entry* originated on this device."""
+    return queued_entry.origin in {"local", clipboard_storage.local_id}
+
+
 def paste_queue_handler(
     stop_event,
     paste_queue: Queue,
@@ -42,14 +47,16 @@ def paste_queue_handler(
 
             elif queued_entry.type == "files":
                 logger.info("[paste queue] processing file entry from %s", queued_entry.origin)
-                ip_str = queued_entry.origin if queued_entry.origin != "local" else "localhost"
-                downloaded_paths = api_module.get_files(
-                    parse_file_list(queued_entry.entry),
-                    ip_str,
-                    public_key,
-                    private_key,
-                    key_pass
-                )
+                if _entry_origin_is_local(queued_entry, clipboard_storage):
+                    downloaded_paths = parse_file_list(queued_entry.entry)
+                else:
+                    downloaded_paths = api_module.get_files(
+                        parse_file_list(queued_entry.entry),
+                        queued_entry.origin,
+                        public_key,
+                        private_key,
+                        key_pass,
+                    )
                 if downloaded_paths:
                     clipboard_implementation.paste_clipboard_entry(downloaded_paths)
                     clipboard_storage.mark_programmatic_clipboard_write()

@@ -22,6 +22,11 @@ def test_file_request_requires_absolute_path():
         api_module.FileRequest(path="relative/path.txt")
 
 
+def test_file_request_accepts_windows_absolute_path():
+    req = api_module.FileRequest(path=r"C:\Users\George\Desktop\SuperSecretKey.ska")
+    assert req.path == r"C:\Users\George\Desktop\SuperSecretKey.ska"
+
+
 def test_parse_handshake_body_accepts_plain_json_without_using_private_key():
     body = json.dumps(
         {
