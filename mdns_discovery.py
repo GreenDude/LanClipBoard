@@ -20,6 +20,7 @@ class LanClipboardDiscovery:
 
     SERVICE_TYPE = "_lanclipboard._tcp.local."
     BROWSER_DELAY_MS = 1_000
+    ANNOUNCE_INTERVAL_SECONDS = 15
 
     def __init__(
         self,
@@ -51,6 +52,8 @@ class LanClipboardDiscovery:
         self._service_ips: dict[str, str] = {}
         self._remote_service_seen = False
         self._discovery_hint_task: asyncio.Task | None = None
+        self._announce_task: asyncio.Task | None = None
+        self._announce_seq = 0
         self._stopped = False
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -66,6 +69,7 @@ class LanClipboardDiscovery:
             b"device_name": safe_device_name.encode("utf-8"),
             b"platform": self.platform_name.encode("utf-8"),
             b"protocol_version": str(self.protocol_version).encode("utf-8"),
+            b"announce_seq": b"0",
         }
 
         self.aiozc = AsyncZeroconf(
@@ -115,6 +119,7 @@ class LanClipboardDiscovery:
             properties,
         )
         self._discovery_hint_task = asyncio.create_task(self._log_discovery_hint())
+        self._announce_task = asyncio.create_task(self._periodic_announce())
 
     async def bootstrap_handshake(self, peers: list[str] | None):
         """Shake hands with statically configured *peers* (IPs), skipping self and empty entries."""
@@ -141,6 +146,9 @@ class LanClipboardDiscovery:
         if self._discovery_hint_task is not None:
             self._discovery_hint_task.cancel()
             self._discovery_hint_task = None
+        if self._announce_task is not None:
+            self._announce_task.cancel()
+            self._announce_task = None
         if self.browser is not None:
             await self.browser.async_cancel()
             self.browser = None
@@ -289,6 +297,27 @@ class LanClipboardDiscovery:
             "Discovery may be blocked by the local network, firewall, Avahi/Bonjour, or multicast filtering. "
             "Set network.bootstrap_peers in config/config.yaml for a reliable cross-platform fallback."
         )
+
+    async def _periodic_announce(self) -> None:
+        """Periodically re-announce the local service so late-starting peers can detect it."""
+        try:
+            while not self._stopped and self.aiozc is not None and self.service_info is not None:
+                await asyncio.sleep(self.ANNOUNCE_INTERVAL_SECONDS)
+                if self._stopped or self.aiozc is None or self.service_info is None:
+                    return
+
+                self._announce_seq += 1
+                self.service_info.properties[b"announce_seq"] = str(self._announce_seq).encode("utf-8")
+                await self.aiozc.async_update_service(self.service_info)
+                logger.info(
+                    "[discovery] re-announced local service announce_seq=%s interval_seconds=%s",
+                    self._announce_seq,
+                    self.ANNOUNCE_INTERVAL_SECONDS,
+                )
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("[discovery] periodic re-announce failed")
 
     async def _handshake_with_peer(self, ip: str, port: int):
         """POST plaintext JSON to the peer's handshake endpoint and maybe append *ip* to *peer_list*."""
