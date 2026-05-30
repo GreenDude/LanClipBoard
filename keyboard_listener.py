@@ -70,6 +70,23 @@ def _win32_modifiers_satisfied(required: set[str]) -> bool:
     return True
 
 
+def _sync_win32_modifier_tokens(pressed: set[str]) -> set[str]:
+    """Refresh modifier tokens in *pressed* from current Win32 key state."""
+    modifier_states = {
+        "Key.ctrl": _win32_get_key_state(_VK_CONTROL),
+        "Key.shift": _win32_get_key_state(_VK_SHIFT),
+        "Key.alt": _win32_get_key_state(_VK_MENU),
+        "Key.cmd": _win32_get_key_state(_VK_LWIN) or _win32_get_key_state(_VK_RWIN),
+    }
+
+    for token, is_down in modifier_states.items():
+        if is_down:
+            pressed.add(token)
+        else:
+            pressed.discard(token)
+    return pressed
+
+
 def _make_win32_suppress_hotkey_filter(
     paste_hotkey: set[str],
     listener_ref: list,
@@ -140,6 +157,8 @@ def monitor_keyboard(
         k = normalize_key(key)
 
         pressed.add(k)
+        if platform.system() == "Windows":
+            _sync_win32_modifier_tokens(pressed)
         if log_key_input:
             logger.info("[keyboard] pressed=%s hotkey=%s", pressed, paste_hotkey)
 
@@ -154,6 +173,8 @@ def monitor_keyboard(
         nonlocal combo_active
         k = normalize_key(key)
         pressed.discard(k)
+        if platform.system() == "Windows":
+            _sync_win32_modifier_tokens(pressed)
         if not (paste_hotkey <= pressed):
             combo_active = False
 
