@@ -75,5 +75,5 @@ def test_programmatic_clipboard_write_is_consumed_once():
     storage = ClipboardStorage("local@10.0.0.1")
     storage.mark_programmatic_clipboard_write(ttl_seconds=1.0)
 
-    assert storage.consume_programmatic_clipboard_write() is True
-    assert storage.consume_programmatic_clipboard_write() is False
+    assert storage.has_entry() is True
+    assert storage.has_entry() is False
