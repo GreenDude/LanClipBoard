@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
 from contextlib import asynccontextmanager
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -17,12 +18,27 @@ from mdns_discovery import LanClipboardDiscovery
 from clipboard_factory import get_clipboard
 from api_module import build_rest_router, get_local_ip
 from clipboard_listener import monitor_clipboard
-from clipboard_storage import ClipboardStorage
+from clipboard_storage import ClipboardEntryLimits, ClipboardStorage
 from keyboard_listener import monitor_keyboard
 from paste_queue_handler import paste_queue_handler
+from peer_registry import PeerRegistry
+from shared_file_registry import SharedFileRegistry
 
 import tempfile
 import security_services
+
+logger = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    """Ensure application logs are visible both under uvicorn and standalone runs."""
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+    logger.setLevel(logging.INFO)
 
 
 def load_private_key_from_config(config):
@@ -36,14 +52,14 @@ def load_private_key_from_config(config):
         return none_key
 
     archive_path = config.security.key_archive
-    password = config.security.key_password
+    password = config.security.key_password or os.environ.get("LANCLIPBOARD_KEY_PASSWORD")
 
     if not archive_path:
         return none_key
 
     archive_file = Path(archive_path)
     if not archive_file.exists():
-        print(f"[security] key archive not found: {archive_file}")
+        logger.warning("[security] key archive not found: %s", archive_file)
         return none_key
 
     temp_dir: Path | None = None
@@ -66,11 +82,11 @@ def load_private_key_from_config(config):
         )
 
         if private_key_file is None:
-            print("[security] private key not found in archive")
+            logger.warning("[security] private key not found in archive")
             return None, None, None
 
         if public_key_file is None:
-            print("[security] public key not found in archive")
+            logger.warning("[security] public key not found in archive")
             return None, None, None
 
         private_key_pem = private_key_file.read_bytes()
@@ -79,8 +95,8 @@ def load_private_key_from_config(config):
 
         return private_key_pem, public_key_pem, pwd
 
-    except Exception as e:
-        print(f"[security] failed to load key archive: {e}")
+    except Exception:
+        logger.exception("[security] failed to load key archive")
         return None, None, None
     finally:
         if temp_dir is not None:
@@ -97,6 +113,7 @@ def build_hotkey_set(keys: list[str]) -> set[str]:
 @asynccontextmanager
 async def async_clipboard_lifespan(app: FastAPI):
     """Start background threads, discovery, and shared app state; tear down on shutdown."""
+    configure_logging()
     app.state.config = load_config()
 
     port = app.state.config.network.port
@@ -107,9 +124,29 @@ async def async_clipboard_lifespan(app: FastAPI):
 
     app.state.local_ip = get_local_ip()
     app.state.local_id = platform.system() + "@" + app.state.local_ip
-    app.state.peer_list = []
+    app.state.peer_registry = PeerRegistry(auto_accept=app.state.config.peers.auto_accept)
+    app.state.shared_file_registry = SharedFileRegistry()
+    logger.info(
+        "[startup] "
+        "local_id=%s device_name=%s platform=%s local_ip=%s port=%s "
+        "discovery_enabled=%s bootstrap_peers=%s auto_accept=%s",
+        app.state.local_id,
+        device_name,
+        platform.system(),
+        app.state.local_ip,
+        port,
+        app.state.config.network.discovery,
+        app.state.config.network.bootstrap_peers,
+        app.state.config.peers.auto_accept,
+    )
 
-    app.state.clipboard_storage = ClipboardStorage(app.state.local_id)
+    app.state.clipboard_storage = ClipboardStorage(
+        app.state.local_id,
+        limits=ClipboardEntryLimits(
+            text_max_length=app.state.config.clipboard.text_max_length,
+            files_max_length=app.state.config.clipboard.files_max_length,
+        ),
+    )
     app.state.clipboard = get_clipboard()
 
     app.state.device_name = device_name
@@ -125,9 +162,9 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.testing_log_key_input = app.state.config.testing.log_key_input
 
     if private_key_pem is not None:
-        print("[security] private key loaded")
+        logger.info("[security] private key loaded")
     else:
-        print("[security] running without private key")
+        logger.info("[security] running without private key")
 
     app.state.paste_queue = Queue()
 
@@ -135,17 +172,28 @@ async def async_clipboard_lifespan(app: FastAPI):
     app.state.stop_event = stop_event
 
     is_wayland = platform.system() == "Linux" and (os.environ.get("XDG_SESSION_TYPE") == "wayland")
+    poll_interval_ms = app.state.config.clipboard.poll_interval_ms
+    if is_wayland:
+        poll_interval_ms = max(poll_interval_ms, 2000)
+        if poll_interval_ms != app.state.config.clipboard.poll_interval_ms:
+            logger.info("[clipboard] raised Wayland poll interval to %sms", poll_interval_ms)
+    logger.info(
+        "[clipboard] session_type=%s effective_poll_interval_ms=%s",
+        os.environ.get("XDG_SESSION_TYPE"),
+        poll_interval_ms,
+    )
 
     clipboard_thread = Thread(
         target=monitor_clipboard,
         args=(app.state.clipboard,
               app.state.clipboard_storage,
               app.state.local_id, stop_event,
-              app.state.peer_list,
-              app.state.config.clipboard.poll_interval_ms,
+              app.state.peer_registry,
+              poll_interval_ms,
               app.state.public_key_pem,
               app.state.private_key_pem,
               app.state.private_key_password,
+              app.state.shared_file_registry,
               ),
         daemon=True,
         name="clipboard_thread",
@@ -157,6 +205,7 @@ async def async_clipboard_lifespan(app: FastAPI):
             stop_event,
             app.state.paste_queue,
             app.state.clipboard,
+            app.state.clipboard_storage,
             app.state.private_key_pem,
             app.state.public_key_pem,
             app.state.private_key_password,
@@ -165,7 +214,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         name="queue_handler_thread",
     )
 
-    print(f"[discovery] using local_ip={app.state.local_ip}")
+    logger.info("[discovery] using local_ip=%s", app.state.local_ip)
     discovery_service = LanClipboardDiscovery(
         local_id=app.state.local_id,
         local_ip=app.state.local_ip,
@@ -173,7 +222,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         platform_name=platform.system(),
         port=port,
         protocol_version=1,
-        peer_list=app.state.peer_list,
+        peer_registry=app.state.peer_registry,
         peer_public_key_pem=app.state.public_key_pem
     )
 
@@ -185,7 +234,7 @@ async def async_clipboard_lifespan(app: FastAPI):
     if bootstrap_peers:
         await discovery_service.bootstrap_handshake(bootstrap_peers)
     else:
-        print("[discovery] no bootstrap peers configured, relying on service discovery only")
+        logger.info("[discovery] no bootstrap peers configured, relying on service discovery only")
 
     clipboard_thread.start()
     queue_handler_thread.start()
@@ -211,7 +260,7 @@ async def async_clipboard_lifespan(app: FastAPI):
         keyboard_thread.start()
         app.state.keyboard_thread = keyboard_thread
     else:
-        print("Wayland detected: keyboard listener disabled")
+        logger.info("Wayland detected: keyboard listener disabled")
 
     try:
         yield

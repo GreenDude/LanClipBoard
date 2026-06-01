@@ -1,12 +1,13 @@
 """Tests for :mod:`clipboard_storage` validation and storage behavior."""
 # Copyright (c) 2026 Gheorghii Mosin
 # Licensed under the MIT License
+import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
 
-from clipboard_storage import ClipboardEntry, ClipboardStorage, _new_entry_is_valid
+from clipboard_storage import ClipboardEntry, ClipboardEntryLimits, ClipboardStorage, _new_entry_is_valid
 
 
 def _entry(**kwargs) -> ClipboardEntry:
@@ -26,10 +27,22 @@ def test_new_entry_is_valid_requires_nonempty_entry():
     assert _new_entry_is_valid(_entry(entry="")) is False
 
 
+def test_new_entry_is_valid_uses_text_limit():
+    limits = ClipboardEntryLimits(text_max_length=5, files_max_length=100)
+    assert _new_entry_is_valid(_entry(entry="hello"), limits) is True
+    assert _new_entry_is_valid(_entry(entry="toolong"), limits) is False
+
+
 def test_new_entry_is_valid_type_and_platform():
-    assert _new_entry_is_valid(_entry(type="files")) is True
+    assert _new_entry_is_valid(_entry(type="files", entry=json.dumps(["/tmp/file.txt"]))) is True
     assert _new_entry_is_valid(_entry(type="image")) is False
     assert _new_entry_is_valid(_entry(platform="Plan9")) is False
+
+
+def test_new_entry_is_valid_uses_file_list_limit():
+    limits = ClipboardEntryLimits(text_max_length=100, files_max_length=10)
+    assert _new_entry_is_valid(_entry(type="files", entry=json.dumps(["/a"])), limits) is True
+    assert _new_entry_is_valid(_entry(type="files", entry=json.dumps(["/tmp/file.txt"])), limits) is False
 
 
 def test_store_rejects_invalid_entry():
@@ -56,3 +69,11 @@ def test_store_wayland_skips_local_origin(monkeypatch):
     local = _entry(origin="local@10.0.0.1", platform="Linux", type="text", entry="hi")
     assert storage.store_clipboard_entry("local@10.0.0.1", local, pq) is True
     pq.put.assert_not_called()
+
+
+def test_programmatic_clipboard_write_is_consumed_once():
+    storage = ClipboardStorage("local@10.0.0.1")
+    storage.mark_programmatic_clipboard_write(ttl_seconds=1.0)
+
+    assert storage.consume_programmatic_clipboard_write() is True
+    assert storage.consume_programmatic_clipboard_write() is False

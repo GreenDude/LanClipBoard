@@ -3,13 +3,17 @@
 # Licensed under the MIT License
 from __future__ import annotations
 
+import os
 import platform
+import shutil
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import tempfile
 import yaml
 
 import re
+import socket
 import subprocess
 import sys
 import security_services
@@ -19,6 +23,18 @@ def get_default_paste_hotkey() -> list[str]:
     if platform.system() == "Darwin":
         return ["Key.cmd", "Key.shift", "v"]
     return ["Key.ctrl", "Key.shift", "v"]
+
+
+def get_local_ip() -> str:
+    """Best-effort primary IPv4 for display in the configurator."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        sock.close()
 
 DEFAULT_CONFIG = {
     "device": {
@@ -35,6 +51,8 @@ DEFAULT_CONFIG = {
     },
     "clipboard": {
         "poll_interval_ms": 200,
+        "text_max_length": 100000,
+        "files_max_length": 20000,
     },
     "security": {
         "enabled": False,
@@ -43,6 +61,10 @@ DEFAULT_CONFIG = {
     },
     "peers": {
         "auto_accept": True,
+    },
+    "testing": {
+        "endpoints_enabled": False,
+        "log_key_input": False,
     },
 }
 
@@ -62,25 +84,31 @@ class MonocleConfigApp(tk.Tk):
 
         self.device_id_var = tk.StringVar()
         self.device_name_var = tk.StringVar()
+        self.local_ip_var = tk.StringVar(value=get_local_ip())
 
         self.network_port_var = tk.StringVar()
         self.network_discovery_var = tk.BooleanVar(value=True)
-        self.bootstrap_peers_var = tk.StringVar()
 
         self.hotkey_paste_var = tk.StringVar()
         self.clipboard_poll_ms_var = tk.StringVar()
+        self.clipboard_text_max_length_var = tk.StringVar()
+        self.clipboard_files_max_length_var = tk.StringVar()
 
         self.security_enabled_var = tk.BooleanVar(value=False)
         self.security_key_archive_var = tk.StringVar()
         self.security_key_password_var = tk.StringVar()
 
         self.peers_auto_accept_var = tk.BooleanVar(value=True)
+        self.peer_entry_var = tk.StringVar()
+        self.testing_endpoints_enabled_var = tk.BooleanVar(value=False)
+        self.testing_log_key_input_var = tk.BooleanVar(value=False)
 
         self.generate_key_name_var = tk.StringVar()
         self.generate_key_password_var = tk.StringVar()
 
         self.server_status_var = tk.StringVar(value="Stopped")
         self.server_process = None
+        self.bootstrap_peers_list: list[str] = []
 
         self._build_ui()
         self.load_from_path(initial=True)
@@ -108,8 +136,6 @@ class MonocleConfigApp(tk.Tk):
             return
 
         config_dir = self._get_config_dir()
-        private_key_path = config_dir / f"{key_name}_private.pem"
-        public_key_path = config_dir / f"{key_name}_public.pem"
         archive_path = config_dir / f"{key_name}.ska"
 
         try:
@@ -117,21 +143,18 @@ class MonocleConfigApp(tk.Tk):
                 password=key_password.encode("utf-8")
             )
 
-            private_key_path.write_bytes(private_key)
-            public_key_path.write_bytes(public_key)
-
             security_services.package_keys(
                 private_key=private_key,
                 public_key=public_key,
                 archive_path=archive_path,
-                private_key_name=private_key_path.name,
-                public_key_name=public_key_path.name,
+                private_key_name=f"{key_name}_private.pem",
+                public_key_name=f"{key_name}_public.pem",
                 archive_password=key_password.encode("utf-8"),
             )
 
             self.security_enabled_var.set(True)
             self.security_key_archive_var.set(str(archive_path))
-            self.security_key_password_var.set(key_password)
+            self.security_key_password_var.set("")
 
             self.save_config()
             self.status_var.set(f"Generated key archive: {archive_path}")
@@ -161,12 +184,12 @@ class MonocleConfigApp(tk.Tk):
             messagebox.showerror("Missing password", "Enter the key password.")
             return
 
-        config_dir = self._get_config_dir()
+        temp_dir = Path(tempfile.mkdtemp(prefix="lanclipboard_import_"))
 
         try:
             extracted_files = security_services.unpack_keys(
                 archive_path=archive_path,
-                destination_dir=config_dir,
+                destination_dir=temp_dir,
                 archive_password=key_password.encode("utf-8"),
             )
 
@@ -192,12 +215,14 @@ class MonocleConfigApp(tk.Tk):
             self.status_var.set(f"Imported key archive: {archive_path}")
             messagebox.showinfo(
                 "Success",
-                f"Key archive imported successfully.\nFiles extracted to:\n{config_dir}"
+                "Key archive validated and configured successfully."
             )
 
         except Exception as exc:
             messagebox.showerror("Import failed", f"Failed to import key archive:\n{exc}")
             self.status_var.set("Key import failed")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def start_application(self) -> None:
         """Persist the form to YAML and spawn ``uvicorn main:app`` with cwd at the project root."""
@@ -237,9 +262,13 @@ class MonocleConfigApp(tk.Tk):
         ]
 
         try:
+            env = dict(os.environ)
+            if self.security_key_password_var.get():
+                env["LANCLIPBOARD_KEY_PASSWORD"] = self.security_key_password_var.get()
             self.server_process = subprocess.Popen(
                 cmd,
                 cwd=str(Path(self.config_path_var.get()).resolve().parent.parent),
+                env=env,
             )
             self.server_status_var.set(f"Running on port {port}")
             self.status_var.set("Application started")
@@ -302,6 +331,7 @@ class MonocleConfigApp(tk.Tk):
         notebook.add(self._build_clipboard_tab(notebook), text="Clipboard")
         notebook.add(self._build_security_tab(notebook), text="Security")
         notebook.add(self._build_peers_tab(notebook), text="Peers")
+        notebook.add(self._build_debugging_tab(notebook), text="Debugging")
 
         button_bar = ttk.Frame(outer)
         button_bar.grid(row=2, column=0, sticky="ew", pady=(10, 0))
@@ -322,14 +352,17 @@ class MonocleConfigApp(tk.Tk):
         ttk.Label(frame, text="Device name").grid(row=1, column=0, sticky="w", pady=6, padx=(0, 12))
         ttk.Entry(frame, textvariable=self.device_name_var).grid(row=1, column=1, sticky="ew", pady=6)
 
+        ttk.Label(frame, text="Detected IP").grid(row=2, column=0, sticky="w", pady=6, padx=(0, 12))
+        ttk.Label(frame, textvariable=self.local_ip_var).grid(row=2, column=1, sticky="w", pady=6)
+
         ttk.Label(
             frame,
             text='Use "auto" to let the app derive the value automatically.',
             foreground="#666666",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 16))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 16))
 
         runtime_section = ttk.LabelFrame(frame, text="Application control", padding=12)
-        runtime_section.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        runtime_section.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         runtime_section.columnconfigure(1, weight=1)
 
         ttk.Label(runtime_section, text="Status").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=6)
@@ -350,7 +383,7 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_network_tab(self, parent: ttk.Notebook) -> ttk.Frame:
-        """Port, discovery toggle, and multiline bootstrap peers."""
+        """Port and discovery settings."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
@@ -361,16 +394,11 @@ class MonocleConfigApp(tk.Tk):
             row=1, column=0, columnspan=2, sticky="w", pady=6
         )
 
-        ttk.Label(frame, text="Bootstrap peers").grid(row=2, column=0, sticky="nw", pady=6, padx=(0, 12))
-        peers_text = (
-            "Enter one IP or host per line.\n"
-            "Leave empty to rely only on service discovery."
-        )
-        ttk.Label(frame, text=peers_text, foreground="#666666").grid(row=2, column=1, sticky="w", pady=(6, 4))
-        ttk.Label(frame, text="Peers list").grid(row=3, column=0, sticky="nw", padx=(0, 12))
-        self.bootstrap_text = tk.Text(frame, height=10, width=40, wrap="word")
-        self.bootstrap_text.grid(row=3, column=1, sticky="nsew")
-        frame.rowconfigure(3, weight=1)
+        ttk.Label(
+            frame,
+            text="Manage bootstrap peers from the Peers tab. Discovery stays enabled here.",
+            foreground="#666666",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         return frame
 
@@ -391,12 +419,24 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_clipboard_tab(self, parent: ttk.Notebook) -> ttk.Frame:
-        """Clipboard polling interval field."""
+        """Clipboard polling interval and payload size limits."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
         ttk.Label(frame, text="Poll interval (ms)").grid(row=0, column=0, sticky="w", pady=6, padx=(0, 12))
         ttk.Entry(frame, textvariable=self.clipboard_poll_ms_var).grid(row=0, column=1, sticky="ew", pady=6)
+
+        ttk.Label(frame, text="Text max length").grid(row=1, column=0, sticky="w", pady=6, padx=(0, 12))
+        ttk.Entry(frame, textvariable=self.clipboard_text_max_length_var).grid(row=1, column=1, sticky="ew", pady=6)
+
+        ttk.Label(frame, text="File list max length").grid(row=2, column=0, sticky="w", pady=6, padx=(0, 12))
+        ttk.Entry(frame, textvariable=self.clipboard_files_max_length_var).grid(row=2, column=1, sticky="ew", pady=6)
+
+        ttk.Label(
+            frame,
+            text="These limits apply to the clipboard payload string, not the file bytes themselves.",
+            foreground="#666666",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         return frame
 
@@ -446,13 +486,78 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_peers_tab(self, parent: ttk.Notebook) -> ttk.Frame:
-        """Peer policy checkbox (stored in YAML for future server use)."""
+        """Peer policy and bootstrap peer management."""
+        frame = ttk.Frame(parent, padding=14)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(4, weight=1)
+
+        auto_accept = ttk.Checkbutton(
+            frame,
+            text="Auto-accept peers",
+            variable=self.peers_auto_accept_var,
+            command=self._update_peer_controls_state,
+        )
+        auto_accept.grid(
+            row=0, column=0, sticky="w", pady=6
+        )
+
+        ttk.Label(
+            frame,
+            text="When auto-accept is enabled, manual bootstrap peer management is disabled.",
+            foreground="#666666",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 12))
+
+        local_ip_frame = ttk.LabelFrame(frame, text="This device", padding=12)
+        local_ip_frame.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        local_ip_frame.columnconfigure(1, weight=1)
+        ttk.Label(local_ip_frame, text="Local IP").grid(row=0, column=0, sticky="w", padx=(0, 12))
+        ttk.Label(local_ip_frame, textvariable=self.local_ip_var).grid(row=0, column=1, sticky="w")
+
+        add_peer_frame = ttk.LabelFrame(frame, text="Add bootstrap peer", padding=12)
+        add_peer_frame.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        add_peer_frame.columnconfigure(0, weight=1)
+        self.peer_entry = ttk.Entry(add_peer_frame, textvariable=self.peer_entry_var)
+        self.peer_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.add_peer_button = ttk.Button(add_peer_frame, text="Add peer", command=self._add_bootstrap_peer)
+        self.add_peer_button.grid(row=0, column=1)
+
+        peers_list_frame = ttk.LabelFrame(frame, text="Configured bootstrap peers", padding=12)
+        peers_list_frame.grid(row=4, column=0, sticky="nsew")
+        peers_list_frame.columnconfigure(0, weight=1)
+        peers_list_frame.rowconfigure(0, weight=1)
+
+        self.peers_list_container = ttk.Frame(peers_list_frame)
+        self.peers_list_container.grid(row=0, column=0, sticky="nsew")
+        self.peers_empty_label = ttk.Label(
+            self.peers_list_container,
+            text="No bootstrap peers configured.",
+            foreground="#666666",
+        )
+
+        return frame
+
+    def _build_debugging_tab(self, parent: ttk.Notebook) -> ttk.Frame:
+        """Testing and debugging settings."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(0, weight=1)
 
-        ttk.Checkbutton(frame, text="Auto-accept peers", variable=self.peers_auto_accept_var).grid(
-            row=0, column=0, sticky="w", pady=6
-        )
+        ttk.Label(
+            frame,
+            text="These options enable debugging-oriented endpoints and extra input logging.",
+            foreground="#666666",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 12))
+
+        ttk.Checkbutton(
+            frame,
+            text="Enable testing/debug endpoints",
+            variable=self.testing_endpoints_enabled_var,
+        ).grid(row=1, column=0, sticky="w", pady=6)
+
+        ttk.Checkbutton(
+            frame,
+            text="Log keyboard input",
+            variable=self.testing_log_key_input_var,
+        ).grid(row=2, column=0, sticky="w", pady=6)
 
         return frame
 
@@ -477,15 +582,73 @@ class MonocleConfigApp(tk.Tk):
             self.security_key_archive_var.set(selected)
 
     def _set_bootstrap_peers(self, peers: list[str]) -> None:
-        """Replace the bootstrap multiline widget with *peers*."""
-        self.bootstrap_text.delete("1.0", tk.END)
-        if peers:
-            self.bootstrap_text.insert("1.0", "\n".join(peers))
+        """Replace the in-memory bootstrap peers list with *peers* and rerender the UI."""
+        self.bootstrap_peers_list = list(peers)
+        self._render_bootstrap_peers()
 
     def _get_bootstrap_peers(self) -> list[str]:
-        """Parse non-empty lines from the bootstrap text box."""
-        raw = self.bootstrap_text.get("1.0", tk.END)
-        return [line.strip() for line in raw.splitlines() if line.strip()]
+        """Return configured bootstrap peers."""
+        return list(self.bootstrap_peers_list)
+
+    def _add_bootstrap_peer(self) -> None:
+        """Append a bootstrap peer from the entry field if it is non-empty and not duplicated."""
+        peer = self.peer_entry_var.get().strip()
+        if not peer:
+            messagebox.showerror("Invalid peer", "Peer IP or hostname is required.")
+            return
+        if peer in self.bootstrap_peers_list:
+            messagebox.showinfo("Already added", f"{peer} is already configured.")
+            return
+        self.bootstrap_peers_list.append(peer)
+        self.peer_entry_var.set("")
+        self._render_bootstrap_peers()
+
+    def _remove_bootstrap_peer(self, peer: str) -> None:
+        """Remove *peer* from the bootstrap list and rerender the UI."""
+        self.bootstrap_peers_list = [item for item in self.bootstrap_peers_list if item != peer]
+        self._render_bootstrap_peers()
+
+    def _render_bootstrap_peers(self) -> None:
+        """Render bootstrap peers as rows with delete buttons."""
+        for child in self.peers_list_container.winfo_children():
+            child.destroy()
+
+        list_foreground = "#999999" if self.peers_auto_accept_var.get() else "#000000"
+
+        if not self.bootstrap_peers_list:
+            self.peers_empty_label = ttk.Label(
+                self.peers_list_container,
+                text="No bootstrap peers configured.",
+                foreground="#666666",
+            )
+            self.peers_empty_label.grid(row=0, column=0, sticky="w")
+            return
+
+        self.peers_list_container.columnconfigure(0, weight=1)
+        for idx, peer in enumerate(self.bootstrap_peers_list):
+            ttk.Label(
+                self.peers_list_container,
+                text=peer,
+                foreground=list_foreground,
+            ).grid(row=idx, column=0, sticky="w", pady=4)
+            delete_button = ttk.Button(
+                self.peers_list_container,
+                text="Delete",
+                command=lambda value=peer: self._remove_bootstrap_peer(value),
+            )
+            delete_button.grid(row=idx, column=1, sticky="e", padx=(12, 0), pady=4)
+            if self.peers_auto_accept_var.get():
+                delete_button.state(["disabled"])
+
+    def _update_peer_controls_state(self) -> None:
+        """Enable or disable manual peer controls based on auto-accept."""
+        controls_disabled = self.peers_auto_accept_var.get()
+        entry_state = "disabled" if controls_disabled else "normal"
+        button_state = ["disabled"] if controls_disabled else ["!disabled"]
+
+        self.peer_entry.configure(state=entry_state)
+        self.add_peer_button.state(button_state)
+        self._render_bootstrap_peers()
 
     def reset_defaults(self) -> None:
         """Populate the form from :data:`DEFAULT_CONFIG`."""
@@ -527,6 +690,7 @@ class MonocleConfigApp(tk.Tk):
             "clipboard": dict(DEFAULT_CONFIG["clipboard"]),
             "security": dict(DEFAULT_CONFIG["security"]),
             "peers": dict(DEFAULT_CONFIG["peers"]),
+            "testing": dict(DEFAULT_CONFIG["testing"]),
         }
 
         for section, default_values in merged.items():
@@ -544,9 +708,11 @@ class MonocleConfigApp(tk.Tk):
         clipboard = data.get("clipboard", {})
         security = data.get("security", {})
         peers = data.get("peers", {})
+        testing = data.get("testing", {})
 
         self.device_id_var.set(device.get("id", "auto"))
         self.device_name_var.set(device.get("name", "auto"))
+        self.local_ip_var.set(get_local_ip())
 
         self.network_port_var.set(str(network.get("port", 8000)))
         self.network_discovery_var.set(bool(network.get("discovery", True)))
@@ -557,12 +723,17 @@ class MonocleConfigApp(tk.Tk):
         )
 
         self.clipboard_poll_ms_var.set(str(clipboard.get("poll_interval_ms", 200)))
+        self.clipboard_text_max_length_var.set(str(clipboard.get("text_max_length", 100000)))
+        self.clipboard_files_max_length_var.set(str(clipboard.get("files_max_length", 20000)))
 
         self.security_enabled_var.set(bool(security.get("enabled", False)))
         self.security_key_archive_var.set(security.get("key_archive") or "")
-        self.security_key_password_var.set(security.get("key_password") or "")
+        self.security_key_password_var.set("")
 
         self.peers_auto_accept_var.set(bool(peers.get("auto_accept", True)))
+        self.testing_endpoints_enabled_var.set(bool(testing.get("endpoints_enabled", False)))
+        self.testing_log_key_input_var.set(bool(testing.get("log_key_input", False)))
+        self._update_peer_controls_state()
 
     def _collect_config(self) -> dict:
         """Read and validate widgets into a dict suitable for ``yaml.safe_dump``."""
@@ -576,13 +747,17 @@ class MonocleConfigApp(tk.Tk):
         except ValueError as exc:
             raise ValueError("Clipboard poll interval must be an integer") from exc
 
+        try:
+            text_max_length = int(self.clipboard_text_max_length_var.get().strip())
+            files_max_length = int(self.clipboard_files_max_length_var.get().strip())
+        except ValueError as exc:
+            raise ValueError("Clipboard size limits must be integers") from exc
+
         hotkey_parts = [part.strip() for part in self.hotkey_paste_var.get().split(",") if part.strip()]
         if not hotkey_parts:
             raise ValueError("Paste hotkey cannot be empty")
 
         key_archive = self.security_key_archive_var.get().strip() or None
-        key_password = self.security_key_password_var.get() or None
-
         return {
             "device": {
                 "id": self.device_id_var.get().strip() or "auto",
@@ -598,14 +773,20 @@ class MonocleConfigApp(tk.Tk):
             },
             "clipboard": {
                 "poll_interval_ms": poll_interval,
+                "text_max_length": text_max_length,
+                "files_max_length": files_max_length,
             },
             "security": {
                 "enabled": self.security_enabled_var.get(),
                 "key_archive": key_archive,
-                "key_password": key_password,
+                "key_password": None,
             },
             "peers": {
                 "auto_accept": self.peers_auto_accept_var.get(),
+            },
+            "testing": {
+                "endpoints_enabled": self.testing_endpoints_enabled_var.get(),
+                "log_key_input": self.testing_log_key_input_var.get(),
             },
         }
 

@@ -3,10 +3,14 @@
 # Licensed under the MIT License
 import os
 import platform
+import time
+from threading import RLock
 
 from datetime import UTC, datetime
+from dataclasses import dataclass
 
 from pydantic import BaseModel
+from clipboard_payloads import parse_file_list
 
 _supported_formats = ("text", "files")
 _supported_platforms = ("Windows", "Darwin", "Linux")
@@ -15,6 +19,14 @@ _is_wayland = (
     platform.system() == "Linux"
     and os.environ.get("XDG_SESSION_TYPE") == "wayland"
 )
+
+
+@dataclass(slots=True)
+class ClipboardEntryLimits:
+    """Per-type payload size limits for inbound clipboard entries."""
+
+    text_max_length: int = 100_000
+    files_max_length: int = 20_000
 
 
 class ClipboardEntry(BaseModel):
@@ -27,21 +39,43 @@ class ClipboardEntry(BaseModel):
     timestamp: datetime
 
 
-def _new_entry_is_valid(checked_entry: ClipboardEntry) -> bool:
+def _new_entry_is_valid(
+    checked_entry: ClipboardEntry,
+    limits: ClipboardEntryLimits | None = None,
+) -> bool:
     """Return True if *checked_entry* uses a known platform, allowed type, and non-empty *entry*."""
-    if checked_entry.platform in _supported_platforms and checked_entry.type in _supported_formats and checked_entry.entry:
-        return True
-    else:
+    if limits is None:
+        limits = ClipboardEntryLimits()
+
+    if checked_entry.platform not in _supported_platforms:
         return False
+    if checked_entry.type not in _supported_formats:
+        return False
+    if not checked_entry.entry:
+        return False
+    if checked_entry.type == "text" and len(checked_entry.entry) > limits.text_max_length:
+        return False
+    if checked_entry.type == "files" and len(checked_entry.entry) > limits.files_max_length:
+        return False
+    if checked_entry.type == "files":
+        try:
+            paths = parse_file_list(checked_entry.entry)
+        except ValueError:
+            return False
+        return len(paths) > 0
+    return True
 
 
 class ClipboardStorage:
     """Stores the latest :class:`ClipboardEntry` per remote address for the REST API and hotkey paste."""
 
-    def __init__(self, local_id):
+    def __init__(self, local_id, limits: ClipboardEntryLimits | None = None):
         """*local_id* is this device's stable id (e.g. ``\"Darwin@192.168.1.5\"``) used for Wayland routing."""
         self.storage_dict = dict()
         self.local_id = local_id
+        self.limits = limits or ClipboardEntryLimits()
+        self._lock = RLock()
+        self._suppress_next_local_change_until = 0.0
 
     def store_clipboard_entry(self, address: str, clip_entry: ClipboardEntry, paste_queue=None) -> bool:
         """Validate and store *clip_entry* under *address*; may enqueue for Wayland paste.
@@ -50,20 +84,11 @@ class ClipboardStorage:
         so the user can paste remote content without a global keyboard hook.
         """
         # Check entry is valid
-        if _new_entry_is_valid(clip_entry):
-            # If client ip is registered create a new entry in the dictionary
-            if address not in self.storage_dict:
-                self.storage_dict[address] = [clip_entry]
-
-            else:
-                clip_entry_list = self.storage_dict[address]
-                clip_entry_list.append(clip_entry)
-                print(clip_entry_list)
-                print(type(clip_entry_list))
-                # remove entries with older timestamps
-                latest_entry = max(clip_entry_list, key=lambda e: e.timestamp, default=None)
-                print(f"latest_entry: {latest_entry}")
-                clip_entry_list[:] = [latest_entry] if latest_entry else []
+        if _new_entry_is_valid(clip_entry, self.limits):
+            with self._lock:
+                current_entry = self.storage_dict.get(address)
+                if current_entry is None or clip_entry.timestamp >= current_entry.timestamp:
+                    self.storage_dict[address] = clip_entry
 
             if _is_wayland and clip_entry.origin != self.local_id:
                 paste_queue.put(clip_entry)
@@ -73,26 +98,30 @@ class ClipboardStorage:
 
     def get_all_clipboard_entries(self):
         """Return ``[(address, latest_entry), ...]`` or ``None`` when empty."""
-        res = list()
-        for entry in self.storage_dict:
-            value = self.storage_dict[entry][len(self.storage_dict[entry]) - 1]
-            res.append((entry, value))
+        with self._lock:
+            res = list(self.storage_dict.items())
 
         if len(res) > 0:
-            print(f"Pulling Clipboard entries: {res}")
             return res
         else:
             return None
 
     def get_latest_clipboard_entry(self) -> ClipboardEntry | None:
         """Return the newest entry across all addresses by :attr:`ClipboardEntry.timestamp`."""
-        timestamps = []
-        for entry in self.storage_dict:
-            clip_entry = self.storage_dict[entry][len(self.storage_dict[entry]) - 1]
-            timestamps.append((entry, clip_entry.timestamp))
+        with self._lock:
+            if not self.storage_dict:
+                return None
+            return max(self.storage_dict.values(), key=lambda entry: entry.timestamp)
 
-        if len(timestamps) > 0:
-            latest_entry = max(timestamps, key=lambda e: e[1])[0]
-            return self.storage_dict[latest_entry][len(self.storage_dict[latest_entry]) - 1]
-        else:
-            return None
+    def mark_programmatic_clipboard_write(self, ttl_seconds: float = 1.5) -> None:
+        """Suppress the next clipboard poll result after LanClipboard updates the local clipboard itself."""
+        with self._lock:
+            self._suppress_next_local_change_until = time.monotonic() + ttl_seconds
+
+    def consume_programmatic_clipboard_write(self) -> bool:
+        """Return True once when a locally written clipboard update should not be rebroadcast."""
+        with self._lock:
+            if time.monotonic() <= self._suppress_next_local_change_until:
+                self._suppress_next_local_change_until = 0.0
+                return True
+            return False

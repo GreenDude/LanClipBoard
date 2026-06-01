@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import tempfile
 import shutil
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +17,9 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from jwcrypto import jwe, jwk
+
+logger = logging.getLogger(__name__)
+_ENCRYPTED_FILE_MAGIC = b"LCF1"
 
 
 def generate_key_pair(
@@ -180,8 +186,8 @@ def decrypt_text(
     return json.loads(token.payload.decode("utf-8"))
 
 
-def encrypt_file(public_key: bytes, file_path: Path) -> str | None:
-    """Encrypt *file_path* with a random Fernet key, wrap the key with RSA-OAEP, write ``*.enc`` beside the file."""
+def encrypt_file(public_key: bytes, file_path: Path, output_dir: Path | None = None) -> str | None:
+    """Encrypt *file_path* with a random Fernet key and write a temporary ``*.enc`` file."""
 
     file_key = fernet.Fernet.generate_key()
     fernet_file = fernet.Fernet(file_key)
@@ -201,25 +207,48 @@ def encrypt_file(public_key: bytes, file_path: Path) -> str | None:
     )
 
     file_path = Path(file_path)
-    encrypted_file_path = f"{file_path}.enc"
-    with open(encrypted_file_path, "wb") as f:
+    if output_dir is None:
+        output_dir = Path(tempfile.gettempdir()) / "LanClipboard"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f"{file_path.stem}_", suffix=".enc", dir=output_dir)
+    encrypted_file_path = Path(temp_name)
+    original_name_bytes = file_path.name.encode("utf-8")
+    with os.fdopen(fd, "wb") as f:
+        f.write(_ENCRYPTED_FILE_MAGIC)
         f.write(len(encrypted_file_key).to_bytes(4, 'big'))  # Store key length
         f.write(encrypted_file_key)
+        f.write(len(original_name_bytes).to_bytes(2, "big"))
+        f.write(original_name_bytes)
         f.write(encrypted_data)
 
-    if Path(encrypted_file_path).exists():
-        return encrypted_file_path
+    if encrypted_file_path.exists():
+        return str(encrypted_file_path)
     else:
         return None
 
 
-def decrypt_file(private_key: bytes, key_pass: bytes, encrypted_file_path: str) -> str | None:
+def decrypt_file(
+    private_key: bytes,
+    key_pass: bytes | None,
+    encrypted_file_path: str,
+    output_dir: Path | None = None,
+) -> str | None:
     """Inverse of :func:`encrypt_file`; writes plaintext next to the ``.enc`` file and returns that path."""
     with open(encrypted_file_path, "rb") as f:
-        print(f"Attempting to decrypt: {encrypted_file_path}")
-        key_length = int.from_bytes(f.read(4), 'big')
-        encrypted_file_key = f.read(key_length)
-        encrypted_data = f.read()
+        logger.info("Attempting to decrypt: %s", encrypted_file_path)
+        magic = f.read(len(_ENCRYPTED_FILE_MAGIC))
+        if magic == _ENCRYPTED_FILE_MAGIC:
+            key_length = int.from_bytes(f.read(4), 'big')
+            encrypted_file_key = f.read(key_length)
+            name_length = int.from_bytes(f.read(2), "big")
+            original_name = f.read(name_length).decode("utf-8")
+            encrypted_data = f.read()
+        else:
+            f.seek(0)
+            key_length = int.from_bytes(f.read(4), 'big')
+            encrypted_file_key = f.read(key_length)
+            original_name = None
+            encrypted_data = f.read()
 
     rsa_private_key: rsa.RSAPrivateKey = serialization.load_pem_private_key(
         private_key,
@@ -237,12 +266,18 @@ def decrypt_file(private_key: bytes, key_pass: bytes, encrypted_file_path: str) 
     f = fernet.Fernet(file_key)
     decrypted_data = f.decrypt(encrypted_data)
 
-    decrypted_file_path = encrypted_file_path.removesuffix(".enc")
+    encrypted_path = Path(encrypted_file_path)
+    if output_dir is None:
+        output_dir = encrypted_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    decrypted_name = original_name or encrypted_path.name.removesuffix(".enc")
+    decrypted_file_path = output_dir / decrypted_name
 
     with open(decrypted_file_path, "wb") as f:
         f.write(decrypted_data)
 
-    if Path(decrypted_file_path).exists():
-        return decrypted_file_path
+    if decrypted_file_path.exists():
+        return str(decrypted_file_path)
     else:
         return None

@@ -1,5 +1,6 @@
 """YAML-backed typed configuration for the LanClipBoard service."""
 
+import copy
 import platform
 from pathlib import Path
 from typing import List, Optional
@@ -39,6 +40,8 @@ class ClipboardConfig(BaseModel):
     """Local clipboard polling interval for :func:`clipboard_listener.monitor_clipboard`."""
 
     poll_interval_ms: int
+    text_max_length: int = 100_000
+    files_max_length: int = 20_000
 
 
 class SecurityConfig(BaseModel):
@@ -50,15 +53,15 @@ class SecurityConfig(BaseModel):
 
 
 class PeerConfig(BaseModel):
-    """Peer policy flags (``auto_accept`` is reserved for future enforcement; not yet read by the server)."""
+    """Peer policy flags controlling whether unknown peers may auto-authorize."""
 
     auto_accept: bool
 
 
 class TestingConfig(BaseModel):
     """Configuration used for testing."""
-    endpoints_enabled: bool
-    log_key_input: bool
+    endpoints_enabled: bool = False
+    log_key_input: bool = False
 
 
 class AppConfig(BaseModel):
@@ -70,7 +73,55 @@ class AppConfig(BaseModel):
     clipboard: ClipboardConfig
     security: SecurityConfig
     peers: PeerConfig
-    testing: TestingConfig
+    testing: TestingConfig = Field(default_factory=TestingConfig)
+
+
+DEFAULT_CONFIG_DICT = {
+    "device": {
+        "id": "auto",
+        "name": "auto",
+    },
+    "network": {
+        "port": 8000,
+        "discovery": True,
+        "bootstrap_peers": [],
+    },
+    "hotkeys": {
+        "paste": default_paste_hotkey(),
+    },
+    "clipboard": {
+        "poll_interval_ms": 200,
+        "text_max_length": 100_000,
+        "files_max_length": 20_000,
+    },
+    "security": {
+        "enabled": False,
+        "key_archive": None,
+        "key_password": None,
+    },
+    "peers": {
+        "auto_accept": True,
+    },
+    "testing": {
+        "endpoints_enabled": False,
+        "log_key_input": False,
+    },
+}
+
+
+def _merge_config_defaults(raw: dict | None) -> dict:
+    """Merge *raw* config with known defaults so older config files still load."""
+    merged = copy.deepcopy(DEFAULT_CONFIG_DICT)
+    if not isinstance(raw, dict):
+        return merged
+
+    for section, default_values in merged.items():
+        incoming = raw.get(section)
+        if isinstance(default_values, dict) and isinstance(incoming, dict):
+            default_values.update(incoming)
+        elif incoming is not None:
+            merged[section] = incoming
+    return merged
 
 
 def load_config(path: str = "config/config.yaml") -> AppConfig:
@@ -83,4 +134,4 @@ def load_config(path: str = "config/config.yaml") -> AppConfig:
     with open(config_path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
-    return AppConfig(**raw)
+    return AppConfig(**_merge_config_defaults(raw))
