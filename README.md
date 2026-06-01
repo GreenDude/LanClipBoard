@@ -28,6 +28,8 @@ It allows you to:
 
 For the usage guide, please refer to [USAGE.md](docs/USAGE.md)
 
+For a contributor-oriented architecture guide, see [CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md).
+
 ---
 
 ## 🧠 Architecture
@@ -152,11 +154,9 @@ Each machine should list the other devices it should proactively handshake with.
 
 | OS        | Shortcut            |
 |----------|--------------------|
-| Windows  | Ctrl + Shift + Insert |
+| Windows  | Ctrl + Shift + V   |
 | macOS    | Cmd + Shift + V    |
-| Wayland  | Ctrl + V           |
-
-On Windows, `Ctrl + Shift + V` is not a reliable default because many applications and the platform input stack may intercept it before the listener sees a complete chord. LanClipboard uses `Ctrl + Shift + Insert` by default instead.
+| Linux     | Ctrl + Shift + V   |
 
 ---
 

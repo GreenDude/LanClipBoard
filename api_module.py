@@ -108,7 +108,6 @@ def _try_decrypt_body(request: Request, raw_body: bytes, model_cls: Type[BaseMod
     private_key_password = getattr(request.app.state, "private_key_password", None)
 
     security_enabled = private_key is not None
-    logger.info("Logging raw body: %s", raw_body)
     if security_enabled:
         try:
             encrypted_payload = EncryptedPayload.model_validate_json(raw_body)

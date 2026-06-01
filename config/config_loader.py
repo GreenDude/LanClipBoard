@@ -40,6 +40,8 @@ class ClipboardConfig(BaseModel):
     """Local clipboard polling interval for :func:`clipboard_listener.monitor_clipboard`."""
 
     poll_interval_ms: int
+    text_max_length: int = 100_000
+    files_max_length: int = 20_000
 
 
 class SecurityConfig(BaseModel):
@@ -89,6 +91,8 @@ DEFAULT_CONFIG_DICT = {
     },
     "clipboard": {
         "poll_interval_ms": 200,
+        "text_max_length": 100_000,
+        "files_max_length": 20_000,
     },
     "security": {
         "enabled": False,

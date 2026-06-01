@@ -12,6 +12,8 @@ hotkeys:
   - v
 clipboard:
   poll_interval_ms: 200
+  text_max_length: 100000
+  files_max_length: 20000
 security:
   enabled: false
   key_archive: null

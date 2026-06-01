@@ -7,6 +7,7 @@ import time
 from threading import RLock
 
 from datetime import UTC, datetime
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 from clipboard_payloads import parse_file_list
@@ -18,7 +19,14 @@ _is_wayland = (
     platform.system() == "Linux"
     and os.environ.get("XDG_SESSION_TYPE") == "wayland"
 )
-_MAX_ENTRY_LENGTH = 100_000
+
+
+@dataclass(slots=True)
+class ClipboardEntryLimits:
+    """Per-type payload size limits for inbound clipboard entries."""
+
+    text_max_length: int = 100_000
+    files_max_length: int = 20_000
 
 
 class ClipboardEntry(BaseModel):
@@ -31,13 +39,23 @@ class ClipboardEntry(BaseModel):
     timestamp: datetime
 
 
-def _new_entry_is_valid(checked_entry: ClipboardEntry) -> bool:
+def _new_entry_is_valid(
+    checked_entry: ClipboardEntry,
+    limits: ClipboardEntryLimits | None = None,
+) -> bool:
     """Return True if *checked_entry* uses a known platform, allowed type, and non-empty *entry*."""
+    if limits is None:
+        limits = ClipboardEntryLimits()
+
     if checked_entry.platform not in _supported_platforms:
         return False
     if checked_entry.type not in _supported_formats:
         return False
-    if not checked_entry.entry or len(checked_entry.entry) > _MAX_ENTRY_LENGTH:
+    if not checked_entry.entry:
+        return False
+    if checked_entry.type == "text" and len(checked_entry.entry) > limits.text_max_length:
+        return False
+    if checked_entry.type == "files" and len(checked_entry.entry) > limits.files_max_length:
         return False
     if checked_entry.type == "files":
         try:
@@ -51,10 +69,11 @@ def _new_entry_is_valid(checked_entry: ClipboardEntry) -> bool:
 class ClipboardStorage:
     """Stores the latest :class:`ClipboardEntry` per remote address for the REST API and hotkey paste."""
 
-    def __init__(self, local_id):
+    def __init__(self, local_id, limits: ClipboardEntryLimits | None = None):
         """*local_id* is this device's stable id (e.g. ``\"Darwin@192.168.1.5\"``) used for Wayland routing."""
         self.storage_dict = dict()
         self.local_id = local_id
+        self.limits = limits or ClipboardEntryLimits()
         self._lock = RLock()
         self._suppress_next_local_change_until = 0.0
 
@@ -65,7 +84,7 @@ class ClipboardStorage:
         so the user can paste remote content without a global keyboard hook.
         """
         # Check entry is valid
-        if _new_entry_is_valid(clip_entry):
+        if _new_entry_is_valid(clip_entry, self.limits):
             with self._lock:
                 current_entry = self.storage_dict.get(address)
                 if current_entry is None or clip_entry.timestamp >= current_entry.timestamp:

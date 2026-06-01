@@ -18,7 +18,7 @@ from mdns_discovery import LanClipboardDiscovery
 from clipboard_factory import get_clipboard
 from api_module import build_rest_router, get_local_ip
 from clipboard_listener import monitor_clipboard
-from clipboard_storage import ClipboardStorage
+from clipboard_storage import ClipboardEntryLimits, ClipboardStorage
 from keyboard_listener import monitor_keyboard
 from paste_queue_handler import paste_queue_handler
 from peer_registry import PeerRegistry
@@ -140,7 +140,13 @@ async def async_clipboard_lifespan(app: FastAPI):
         app.state.config.peers.auto_accept,
     )
 
-    app.state.clipboard_storage = ClipboardStorage(app.state.local_id)
+    app.state.clipboard_storage = ClipboardStorage(
+        app.state.local_id,
+        limits=ClipboardEntryLimits(
+            text_max_length=app.state.config.clipboard.text_max_length,
+            files_max_length=app.state.config.clipboard.files_max_length,
+        ),
+    )
     app.state.clipboard = get_clipboard()
 
     app.state.device_name = device_name

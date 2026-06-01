@@ -37,4 +37,17 @@ network:
 - If security is enabled, ensure that the same key archive is used across Lan Clipboard instances
 - Wayland clipboard sync may run into issues. To fix that, try restarting (via stop and start buttons in the configurator)
 - If mDNS discovery does not find peers, verify Avahi/Bonjour and use `bootstrap_peers` instead of relying on multicast discovery alone.
-- On Windows, prefer `Ctrl + Shift + Insert` over `Ctrl + Shift + V`. The `Ctrl + Shift + V` chord is not reliably delivered to the global keyboard listener on all systems/apps.
+- The default paste hotkey is `Ctrl + Shift + V` on Windows and Linux, and `Cmd + Shift + V` on macOS.
+
+## Clipboard limits
+
+The `clipboard` section can cap accepted payload sizes:
+
+```yaml
+clipboard:
+  poll_interval_ms: 200
+  text_max_length: 100000
+  files_max_length: 20000
+```
+
+`text_max_length` limits copied text payloads. `files_max_length` limits the JSON file-path list, not the file bytes.

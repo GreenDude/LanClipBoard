@@ -51,6 +51,8 @@ DEFAULT_CONFIG = {
     },
     "clipboard": {
         "poll_interval_ms": 200,
+        "text_max_length": 100000,
+        "files_max_length": 20000,
     },
     "security": {
         "enabled": False,
@@ -89,6 +91,8 @@ class MonocleConfigApp(tk.Tk):
 
         self.hotkey_paste_var = tk.StringVar()
         self.clipboard_poll_ms_var = tk.StringVar()
+        self.clipboard_text_max_length_var = tk.StringVar()
+        self.clipboard_files_max_length_var = tk.StringVar()
 
         self.security_enabled_var = tk.BooleanVar(value=False)
         self.security_key_archive_var = tk.StringVar()
@@ -415,12 +419,24 @@ class MonocleConfigApp(tk.Tk):
         return frame
 
     def _build_clipboard_tab(self, parent: ttk.Notebook) -> ttk.Frame:
-        """Clipboard polling interval field."""
+        """Clipboard polling interval and payload size limits."""
         frame = ttk.Frame(parent, padding=14)
         frame.columnconfigure(1, weight=1)
 
         ttk.Label(frame, text="Poll interval (ms)").grid(row=0, column=0, sticky="w", pady=6, padx=(0, 12))
         ttk.Entry(frame, textvariable=self.clipboard_poll_ms_var).grid(row=0, column=1, sticky="ew", pady=6)
+
+        ttk.Label(frame, text="Text max length").grid(row=1, column=0, sticky="w", pady=6, padx=(0, 12))
+        ttk.Entry(frame, textvariable=self.clipboard_text_max_length_var).grid(row=1, column=1, sticky="ew", pady=6)
+
+        ttk.Label(frame, text="File list max length").grid(row=2, column=0, sticky="w", pady=6, padx=(0, 12))
+        ttk.Entry(frame, textvariable=self.clipboard_files_max_length_var).grid(row=2, column=1, sticky="ew", pady=6)
+
+        ttk.Label(
+            frame,
+            text="These limits apply to the clipboard payload string, not the file bytes themselves.",
+            foreground="#666666",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         return frame
 
@@ -707,6 +723,8 @@ class MonocleConfigApp(tk.Tk):
         )
 
         self.clipboard_poll_ms_var.set(str(clipboard.get("poll_interval_ms", 200)))
+        self.clipboard_text_max_length_var.set(str(clipboard.get("text_max_length", 100000)))
+        self.clipboard_files_max_length_var.set(str(clipboard.get("files_max_length", 20000)))
 
         self.security_enabled_var.set(bool(security.get("enabled", False)))
         self.security_key_archive_var.set(security.get("key_archive") or "")
@@ -729,6 +747,12 @@ class MonocleConfigApp(tk.Tk):
         except ValueError as exc:
             raise ValueError("Clipboard poll interval must be an integer") from exc
 
+        try:
+            text_max_length = int(self.clipboard_text_max_length_var.get().strip())
+            files_max_length = int(self.clipboard_files_max_length_var.get().strip())
+        except ValueError as exc:
+            raise ValueError("Clipboard size limits must be integers") from exc
+
         hotkey_parts = [part.strip() for part in self.hotkey_paste_var.get().split(",") if part.strip()]
         if not hotkey_parts:
             raise ValueError("Paste hotkey cannot be empty")
@@ -749,6 +773,8 @@ class MonocleConfigApp(tk.Tk):
             },
             "clipboard": {
                 "poll_interval_ms": poll_interval,
+                "text_max_length": text_max_length,
+                "files_max_length": files_max_length,
             },
             "security": {
                 "enabled": self.security_enabled_var.get(),
