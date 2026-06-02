@@ -118,7 +118,7 @@ class ClipboardStorage:
         with self._lock:
             self._suppress_next_local_change_until = time.monotonic() + ttl_seconds
 
-    def consume_programmatic_clipboard_write(self) -> bool:
+    def has_entry(self) -> bool:
         """Return True once when a locally written clipboard update should not be rebroadcast."""
         with self._lock:
             if time.monotonic() <= self._suppress_next_local_change_until:
